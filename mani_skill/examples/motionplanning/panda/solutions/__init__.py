@@ -1,5 +1,6 @@
 from .pick_cube import solve as solvePickCube
 from .stack_cube import solve as solveStackCube
+from .stack_cube_swapped import solve as solveStackCubeSwapped
 from .peg_insertion_side import solve as solvePegInsertionSide
 from .place_sphere import solve as solvePlaceSphere
 from .plug_charger import solve as solvePlugCharger
@@ -10,3 +11,4 @@ from .pull_cube import solve as solvePullCube
 from .draw_svg import solve as solveDrawSVG
 from .draw_triangle import solve as solveDrawTriangle
 from .stack_pyramid import solve as solveStackPyramid
+
