@@ -23,6 +23,7 @@ from mani_skill.examples.motionplanning.panda.solutions import (
     solveDrawSVG,
     solvePlaceSphere,
     solveStackPyramid,
+    solvePlaceCubeLeft,
 )
 
 MP_SOLUTIONS = {
@@ -39,6 +40,7 @@ MP_SOLUTIONS = {
     "PullCube-v1": solvePullCube,
     "DrawSVG-v1": solveDrawSVG,
     "StackPyramid-v1": solveStackPyramid,
+    "PlaceCubeLeft-v1": solvePlaceCubeLeft,
 }
 
 
