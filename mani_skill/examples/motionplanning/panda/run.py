@@ -31,6 +31,7 @@ MP_SOLUTIONS = {
     "PickCube-v1": solvePickCube,
     "StackCube-v1": solveStackCube,
     "StackCubeSwapped-v1": solveStackCubeSwapped,
+    "StackCubeLockedRotation-v1": solveStackCube,
     "PegInsertionSide-v1": solvePegInsertionSide,
     "PlugCharger-v1": solvePlugCharger,
     "PlaceSphere-v1": solvePlaceSphere,
@@ -130,8 +131,7 @@ def parse_args(args=None):
 
 def _main(args, proc_id: int = 0, start_seed: int = 0) -> str:
     env_id = args.env_id
-    env = gym.make(
-        env_id,
+    env_kwargs = dict(
         obs_mode=args.obs_mode,
         control_mode="pd_joint_pos",
         render_mode=args.render_mode,
@@ -139,7 +139,12 @@ def _main(args, proc_id: int = 0, start_seed: int = 0) -> str:
         human_render_camera_configs=dict(shader_pack=args.shader),
         viewer_camera_configs=dict(shader_pack=args.shader),
         sim_backend=args.sim_backend,
-        robot_uids=args.robot_uids,
+    )
+    if args.robot_uids is not None:
+        env_kwargs["robot_uids"] = args.robot_uids
+    env = gym.make(
+        env_id,
+        **env_kwargs,
     )
     if env_id not in MP_SOLUTIONS:
         raise RuntimeError(

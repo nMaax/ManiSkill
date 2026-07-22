@@ -406,7 +406,7 @@ class BaseEnv(gym.Env):
         robot_uids = self.robot_uids
         if not isinstance(initial_agent_poses, list):
             initial_agent_poses = [initial_agent_poses]
-        if robot_uids == "none" or robot_uids == ("none", ):
+        if robot_uids is None or robot_uids == "none" or robot_uids == ("none", ):
             self.agent = None
             return
         if robot_uids is not None:

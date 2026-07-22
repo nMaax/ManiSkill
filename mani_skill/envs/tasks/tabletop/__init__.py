@@ -9,6 +9,7 @@ from .pull_cube import PullCubeEnv
 from .push_cube import PushCubeEnv
 from .stack_cube import StackCubeEnv
 from .stack_cube_swapped import StackCubeSwappedEnv
+from .stack_cube_locked_rotation import StackCubeLockedRotationEnv
 from .turn_faucet import TurnFaucetEnv
 from .two_robot_pick_cube import TwoRobotPickCube
 from .two_robot_stack_cube import TwoRobotStackCube
