@@ -2,7 +2,6 @@ import numpy as np
 import sapien
 from transforms3d.euler import euler2quat
 
-# IMPORT YOUR CUSTOM ENVIRONMENT HERE
 from mani_skill.envs.tasks import PlaceCubeLeftEnv
 from mani_skill.examples.motionplanning.base_motionplanner.utils import (
     compute_grasp_info_by_obb,

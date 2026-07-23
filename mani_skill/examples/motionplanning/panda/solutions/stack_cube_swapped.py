@@ -2,22 +2,22 @@ import numpy as np
 import sapien
 from transforms3d.euler import euler2quat
 
-from mani_skill.examples.motionplanning.panda.motionplanner import (
-    PandaArmMotionPlanningSolver,
-)
+from mani_skill.envs.tasks import StackCubeSwappedEnv
 from mani_skill.examples.motionplanning.base_motionplanner.utils import (
     compute_grasp_info_by_obb,
     get_actor_obb,
 )
+from mani_skill.examples.motionplanning.panda.motionplanner import (
+    PandaArmMotionPlanningSolver,
+)
 
 
-def solve(env, seed=None, debug=False, vis=False):
+def solve(env: StackCubeSwappedEnv, seed=None, debug=False, vis=False):
     env.reset(seed=seed)
     assert env.unwrapped.control_mode in [
         "pd_joint_pos",
         "pd_joint_pos_vel",
     ], env.unwrapped.control_mode
-
     planner = PandaArmMotionPlanningSolver(
         env,
         debug=debug,
@@ -26,11 +26,9 @@ def solve(env, seed=None, debug=False, vis=False):
         visualize_target_grasp_pose=vis,
         print_env_info=False,
     )
-
     FINGER_LENGTH = 0.025
     env = env.unwrapped
-
-    obb = get_actor_obb(env.cubeB)  # Pick target is now Cube B
+    obb = get_actor_obb(env.cubeB)  # pick target is now Cube B
 
     approaching = np.array([0, 0, -1])
     target_closing = (
@@ -60,20 +58,31 @@ def solve(env, seed=None, debug=False, vis=False):
     else:
         print("Fail to find a valid grasp pose")
 
-    # Reach -> Grasp -> Lift (Uses the grasp_pose calculated for Cube B)
+    # -------------------------------------------------------------------------- #
+    # Reach
+    # -------------------------------------------------------------------------- #
     reach_pose = grasp_pose * sapien.Pose([0, 0, -0.05])
     planner.move_to_pose_with_screw(reach_pose)
+
+    # -------------------------------------------------------------------------- #
+    # Grasp
+    # -------------------------------------------------------------------------- #
     planner.move_to_pose_with_screw(grasp_pose)
     planner.close_gripper()
+
+    # -------------------------------------------------------------------------- #
+    # Lift
+    # -------------------------------------------------------------------------- #
     lift_pose = sapien.Pose([0, 0, 0.1]) * grasp_pose
     planner.move_to_pose_with_screw(lift_pose)
 
-    # Destination is now Cube A
-    goal_pose = env.cubeA.pose * sapien.Pose([0, 0, (env.cube_half_size[2] * 2).item()])
-
-    # Calculate the trajectory vector from Cube B's lifted position to Cube A
+    # -------------------------------------------------------------------------- #
+    # Stack (destination is now Cube A)
+    # -------------------------------------------------------------------------- #
+    goal_pose = env.cubeA.pose * sapien.Pose(
+        [0, 0, (env.cube_half_size[2] * 2).item()]
+    )
     offset = (goal_pose.p - env.cubeB.pose.p).cpu().numpy()[0]
-
     align_pose = sapien.Pose(lift_pose.p + offset, lift_pose.q)
     planner.move_to_pose_with_screw(align_pose)
 

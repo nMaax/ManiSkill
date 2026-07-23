@@ -3,9 +3,15 @@ import sapien
 from transforms3d.euler import euler2quat
 
 from mani_skill.envs.tasks import PlaceSphereEnv
+from mani_skill.examples.motionplanning.base_motionplanner.utils import (
+    compute_grasp_info_by_obb,
+    get_actor_obb,
+)
+from mani_skill.examples.motionplanning.panda.motionplanner import (
+    PandaArmMotionPlanningSolver,
+)
 from mani_skill.utils import common
-from mani_skill.examples.motionplanning.panda.motionplanner import PandaArmMotionPlanningSolver
-from mani_skill.examples.motionplanning.base_motionplanner.utils import compute_grasp_info_by_obb, get_actor_obb
+
 
 def solve(env: PlaceSphereEnv, seed=None, debug=False, vis=False):
     env.reset(seed=seed)
@@ -26,7 +32,9 @@ def solve(env: PlaceSphereEnv, seed=None, debug=False, vis=False):
     obb = get_actor_obb(env.obj)
 
     approaching = np.array([0, 0, -1])
-    target_closing = env.agent.tcp.pose.to_transformation_matrix()[0, :3, 1].cpu().numpy()
+    target_closing = (
+        env.agent.tcp.pose.to_transformation_matrix()[0, :3, 1].cpu().numpy()
+    )
     grasp_info = compute_grasp_info_by_obb(
         obb,
         approaching=approaching,
@@ -73,8 +81,11 @@ def solve(env: PlaceSphereEnv, seed=None, debug=False, vis=False):
     # Stack
     # -------------------------------------------------------------------------- #
     block_half_size_torch = common.to_tensor(env.block_half_size)
-    goal_pose = env.bin.pose * sapien.Pose([0, 0, (block_half_size_torch[2] * 2).item()])
-    offset = (goal_pose.p - env.obj.pose.p).cpu().numpy()[0] # remember that all data in ManiSkill is batched and a torch tensor
+    goal_pose = env.bin.pose * sapien.Pose(
+        [0, 0, (block_half_size_torch[2] * 2).item()]
+    )
+    # remember that all data in ManiSkill is batched and a torch tensor
+    offset = (goal_pose.p - env.obj.pose.p).cpu().numpy()[0]
     align_pose = sapien.Pose(lift_pose.p + offset, lift_pose.q)
     planner.move_to_pose_with_screw(align_pose)
 
