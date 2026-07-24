@@ -47,7 +47,7 @@ def get_dependencies():
         "nvidia-ml-py",  # gpu monitoring
         "tyro>=0.8.5",  # nice, typed, command line arg parser
         "huggingface_hub",  # we use HF to version control some assets/datasets more easily
-        "sapien>=3.0.0;platform_system=='Linux'",
+        "sapien>=3.0.3;platform_system=='Linux'",
         "sapien>=3.0.0.b1;platform_system=='Windows'",
         "sapien>=3.0.2;platform_system=='Darwin'",
     ]
@@ -116,7 +116,7 @@ def main(argv):
             ],
             "docs": [
                 # Note that currently sphinx 7 does not work, so we must use v6.2.1. See https://github.com/kivy/kivy/issues/8230 which tracks this issue. Once fixed we can use a later version
-                "sphinx==6.2.1",
+                "sphinx==8.2.3",
                 "sphinx-autobuild",
                 "pydata_sphinx_theme",
                 # For spelling
