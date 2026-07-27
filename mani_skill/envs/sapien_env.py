@@ -993,7 +993,9 @@ class BaseEnv(gym.Env):
             if self._main_seed is not None:
                 return
             seed_list = np.random.RandomState().randint(2**31, size=(self.num_envs,))
-        if not np.iterable(seed):
+        elif isinstance(seed, torch.Tensor):
+            seed_list = common.to_numpy(seed)
+        elif not np.iterable(seed):
             seed_list = np.array([seed])
         elif isinstance(seed, list):
             seed_list = np.array(seed)
