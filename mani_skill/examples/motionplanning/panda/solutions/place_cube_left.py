@@ -79,10 +79,10 @@ def solve(env: PlaceCubeLeftEnv, seed=None, debug=False, vis=False):
     # -------------------------------------------------------------------------- #
     # Place Left
     # -------------------------------------------------------------------------- #
-    # 1. Define target position for Cube A (8cm to the left of Cube B on +Y)
+    # 1. Define target position for Cube A (to the left of Cube B on +Y)
     cubeB_p = env.cubeB.pose.p.cpu().numpy()[0]
     target_p = cubeB_p.copy()
-    target_p[1] += 0.08  # +Y is left in SAPIEN
+    target_p[1] += env.TARGET_Y_OFFSET  # +Y is left in SAPIEN
 
     # 2. Calculate the required total world translation to move Cube A to target_p
     current_cubeA_p = env.cubeA.pose.p.cpu().numpy()[0]
