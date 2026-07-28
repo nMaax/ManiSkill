@@ -5,7 +5,7 @@ from mani_skill.utils.registration import register_env
 
 @register_env("PlaceCubeLeft-v1", max_episode_steps=50)
 class PlaceCubeLeftEnv(StackCubeEnv):
-    TARGET_Y_OFFSET = 0.08
+    TARGET_Y_OFFSET = 0.16
 
     def evaluate(self):
         pos_A = self.cubeA.pose.p
@@ -15,9 +15,7 @@ class PlaceCubeLeftEnv(StackCubeEnv):
 
         is_x_aligned = torch.abs(pos_A[:, 0] - pos_B[:, 0]) < 0.02
 
-        is_y_left = (
-            torch.abs(pos_A[:, 1] - (pos_B[:, 1] + self.TARGET_Y_OFFSET)) < 0.02
-        )
+        is_y_left = torch.abs(pos_A[:, 1] - (pos_B[:, 1] + self.TARGET_Y_OFFSET)) < 0.02
 
         is_placed = is_on_table & is_x_aligned & is_y_left
 

@@ -4,4 +4,4 @@ from mani_skill.utils.registration import register_env
 
 @register_env("PlaceCubeRight-v1", max_episode_steps=50)
 class PlaceCubeRightEnv(PlaceCubeLeftEnv):
-    TARGET_Y_OFFSET = -0.16  # -Y is right in SAPIEN
+    TARGET_Y_OFFSET = -PlaceCubeLeftEnv.TARGET_Y_OFFSET
