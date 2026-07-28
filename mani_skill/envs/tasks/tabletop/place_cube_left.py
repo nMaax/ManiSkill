@@ -5,17 +5,19 @@ from mani_skill.utils.registration import register_env
 
 @register_env("PlaceCubeLeft-v1", max_episode_steps=50)
 class PlaceCubeLeftEnv(StackCubeEnv):
+    TARGET_Y_OFFSET = 0.08
+
     def evaluate(self):
         pos_A = self.cubeA.pose.p
         pos_B = self.cubeB.pose.p
-
-        target_y_offset = 0.08
 
         is_on_table = torch.abs(pos_A[:, 2] - pos_B[:, 2]) < 0.01
 
         is_x_aligned = torch.abs(pos_A[:, 0] - pos_B[:, 0]) < 0.02
 
-        is_y_left = torch.abs(pos_A[:, 1] - (pos_B[:, 1] + target_y_offset)) < 0.02
+        is_y_left = (
+            torch.abs(pos_A[:, 1] - (pos_B[:, 1] + self.TARGET_Y_OFFSET)) < 0.02
+        )
 
         is_placed = is_on_table & is_x_aligned & is_y_left
 
@@ -44,7 +46,7 @@ class PlaceCubeLeftEnv(StackCubeEnv):
         # grasp and place reward
         cubeB_pos = self.cubeB.pose.p
         target_pos = cubeB_pos.clone()
-        target_pos[:, 1] += 0.08  # Target is 8cm to the left
+        target_pos[:, 1] += self.TARGET_Y_OFFSET
         target_pos[:, 2] = cubeB_pos[:, 2]  # Keep Z at table height
 
         cubeA_to_target_dist = torch.linalg.norm(target_pos - cubeA_pos, axis=1)

@@ -17,6 +17,7 @@ from .two_robot_stack_cube import TwoRobotStackCube
 from .poke_cube import PokeCubeEnv
 from .place_sphere import PlaceSphereEnv
 from .place_cube_left import PlaceCubeLeftEnv
+from .place_cube_right import PlaceCubeRightEnv
 from .place_sphere_restricted_spawn import PlaceSphereRestrictedSpawnEnv
 from .roll_ball import RollBallEnv
 from .push_t import PushTEnv

@@ -12,4 +12,5 @@ from .draw_svg import solve as solveDrawSVG
 from .draw_triangle import solve as solveDrawTriangle
 from .stack_pyramid import solve as solveStackPyramid
 from .place_cube_left import solve as solvePlaceCubeLeft
+from .place_cube_right import solve as solvePlaceCubeRight
 
