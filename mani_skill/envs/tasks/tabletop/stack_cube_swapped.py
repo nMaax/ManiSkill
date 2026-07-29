@@ -5,11 +5,11 @@ from mani_skill.utils.registration import register_env
 
 @register_env("StackCubeSwapped-v1", max_episode_steps=50)
 class StackCubeSwappedEnv(StackCubeEnv):
-    """The goal is to pick up the green cube (Cube B) and stack it on top of the red cube (Cube A)
-    and let go."""
+    """Pick up the green cube (cubeB) and stack it on the red cube (cubeA), then let go.
 
-    # NOTE: Stack cube swapped only modifies the success and reward conditions. It doesn't actually swap any cube
-    # as it would be pointless. The task would be the same.
+    Only the success and reward conditions change: swapping the cubes themselves would be
+    pointless, as the task would come out identical.
+    """
 
     def evaluate(self):
         pos_A = self.cubeA.pose.p

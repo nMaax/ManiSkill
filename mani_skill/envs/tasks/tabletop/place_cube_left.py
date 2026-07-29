@@ -1,11 +1,36 @@
 import torch
-from mani_skill.envs.tasks.tabletop.stack_cube import StackCubeEnv
+from mani_skill.envs.tasks.tabletop.configurable_spawn_stack_cube import (
+    ConfigurableSpawnStackCubeEnv,
+)
 from mani_skill.utils.registration import register_env
 
 
 @register_env("PlaceCubeLeft-v1", max_episode_steps=50)
-class PlaceCubeLeftEnv(StackCubeEnv):
+class PlaceCubeLeftEnv(ConfigurableSpawnStackCubeEnv):
+    CUBE_X_RANGE = (-0.20, 0.12)
+    # CUBE_Y_RANGE is dynamically computed (see property below)
+
+    SHARED_XY_OFFSET = 0.0
+    SPAWN_CLEARANCE = 0.015
+    LOCK_Z_ROTATION = False
+
+    CUBEB_DISTURB_THRESH = 0.01
     TARGET_Y_OFFSET = 0.16
+    GOAL_Y_LIMIT = 0.21
+
+    @property
+    def CUBE_Y_RANGE(self):
+        """Cube Y range is dynamically computed based on the target offset and goal limit."""
+        offset, limit = self.TARGET_Y_OFFSET, self.GOAL_Y_LIMIT
+        return (-limit + max(0.0, -offset), limit - max(0.0, offset))
+
+    def _load_scene(self, options: dict):
+        super()._load_scene(options)
+        self.cubeB_init_p = torch.zeros((self.num_envs, 3), device=self.device)
+
+    def _initialize_episode(self, env_idx: torch.Tensor, options: dict):
+        super()._initialize_episode(env_idx, options)
+        self.cubeB_init_p[env_idx] = self.cubeB.pose.p[env_idx]
 
     def evaluate(self):
         pos_A = self.cubeA.pose.p
@@ -22,7 +47,15 @@ class PlaceCubeLeftEnv(StackCubeEnv):
         is_obj_static = self.cubeA.is_static(lin_thresh=1e-2, ang_thresh=0.5)
         is_cubeA_grasped = self.agent.is_grasping(self.cubeA)
 
-        success = is_placed & is_obj_static & (~is_cubeA_grasped)
+        # the goal tracks cubeB's live pose, so knocking cubeB would drag the goal along
+        cubeB_disturbance = torch.linalg.norm(
+            pos_B[:, :2] - self.cubeB_init_p[:, :2], axis=1
+        )
+        is_cubeB_disturbed = cubeB_disturbance > self.CUBEB_DISTURB_THRESH
+
+        success = (
+            is_placed & is_obj_static & (~is_cubeA_grasped) & (~is_cubeB_disturbed)
+        )
 
         return {
             "is_on_table": is_on_table,
@@ -31,6 +64,8 @@ class PlaceCubeLeftEnv(StackCubeEnv):
             "is_placed": is_placed,
             "is_obj_static": is_obj_static,
             "is_cubeA_grasped": is_cubeA_grasped,
+            "cubeB_disturbance": cubeB_disturbance,
+            "is_cubeB_disturbed": is_cubeB_disturbed,
             "success": success.bool(),
         }
 

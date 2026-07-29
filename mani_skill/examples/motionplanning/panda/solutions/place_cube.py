@@ -2,7 +2,7 @@ import numpy as np
 import sapien
 from transforms3d.euler import euler2quat
 
-from mani_skill.envs.tasks import PlaceCubeRightEnv
+from mani_skill.envs.tasks import PlaceCubeLeftEnv
 from mani_skill.examples.motionplanning.base_motionplanner.utils import (
     compute_grasp_info_by_obb,
     get_actor_obb,
@@ -12,7 +12,8 @@ from mani_skill.examples.motionplanning.panda.motionplanner import (
 )
 
 
-def solve(env: PlaceCubeRightEnv, seed=None, debug=False, vis=False):
+def solve(env: PlaceCubeLeftEnv, seed=None, debug=False, vis=False):
+    """Solves every PlaceCube variant: the side is read off env.TARGET_Y_OFFSET."""
     env.reset(seed=seed)
     assert env.unwrapped.control_mode in [
         "pd_joint_pos",
@@ -77,34 +78,27 @@ def solve(env: PlaceCubeRightEnv, seed=None, debug=False, vis=False):
     planner.move_to_pose_with_screw(lift_pose)
 
     # -------------------------------------------------------------------------- #
-    # Place Right
+    # Place beside cubeB, on the side given by env.TARGET_Y_OFFSET (+y is left)
     # -------------------------------------------------------------------------- #
-    # 1. Define target position for Cube A (further to the right of Cube B on -Y)
     cubeB_p = env.cubeB.pose.p.cpu().numpy()[0]
     target_p = cubeB_p.copy()
-    target_p[1] += env.TARGET_Y_OFFSET  # -Y is right in SAPIEN
+    target_p[1] += env.TARGET_Y_OFFSET
+    total_offset = target_p - env.cubeA.pose.p.cpu().numpy()[0]
 
-    # 2. Calculate the required total world translation to move Cube A to target_p
-    current_cubeA_p = env.cubeA.pose.p.cpu().numpy()[0]
-    total_offset = target_p - current_cubeA_p
-
-    # 3. Hover: Move horizontally first (keep Z offset at 0)
+    # traverse at height first, then descend, so cubeA cannot sweep cubeB aside
     hover_offset = total_offset.copy()
     hover_offset[2] = 0.0
     hover_pose = sapien.Pose(lift_pose.p + hover_offset, lift_pose.q)
     planner.move_to_pose_with_screw(hover_pose)
 
-    # 4. Lower: Apply the full offset to go down to table level
-    # We add a tiny 2mm Z-clearance so it doesn't aggressively smash into the table
     place_offset = total_offset.copy()
-    place_offset[2] += 0.002
+    place_offset[2] += 0.002  # stop 2mm short so cubeA is dropped, not slammed
     place_pose = sapien.Pose(lift_pose.p + place_offset, lift_pose.q)
     planner.move_to_pose_with_screw(place_pose)
 
-    # 5. Open Gripper
     res = planner.open_gripper()
 
-    # 6. Retreat: Move the arm back up so it doesn't occlude the cubes at the end
+    # retreat so the arm does not occlude the cubes in the final frame
     retreat_pose = sapien.Pose([0, 0, 0.1]) * place_pose
     planner.move_to_pose_with_screw(retreat_pose)
 

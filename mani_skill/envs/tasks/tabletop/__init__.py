@@ -10,6 +10,7 @@ from .push_cube import PushCubeEnv
 from .stack_cube import StackCubeEnv
 from .stack_cube_swapped import StackCubeSwappedEnv
 from .stack_cube_locked_rotation import StackCubeLockedRotationEnv
+from .stack_cube_swapped_locked_rotation import StackCubeSwappedLockedRotationEnv
 from .stack_cube_restricted_spawn import StackCubeRestrictedSpawnEnv
 from .turn_faucet import TurnFaucetEnv
 from .two_robot_pick_cube import TwoRobotPickCube
@@ -18,6 +19,8 @@ from .poke_cube import PokeCubeEnv
 from .place_sphere import PlaceSphereEnv
 from .place_cube_left import PlaceCubeLeftEnv
 from .place_cube_right import PlaceCubeRightEnv
+from .place_cube_left_locked_rotation import PlaceCubeLeftLockedRotationEnv
+from .place_cube_right_locked_rotation import PlaceCubeRightLockedRotationEnv
 from .place_sphere_restricted_spawn import PlaceSphereRestrictedSpawnEnv
 from .roll_ball import RollBallEnv
 from .push_t import PushTEnv

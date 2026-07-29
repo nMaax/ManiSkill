@@ -23,16 +23,13 @@ from mani_skill.examples.motionplanning.panda.solutions import (
     solveDrawSVG,
     solvePlaceSphere,
     solveStackPyramid,
-    solvePlaceCubeLeft,
-    solvePlaceCubeRight,
+    solvePlaceCube,
 )
 
 MP_SOLUTIONS = {
     "DrawTriangle-v1": solveDrawTriangle,
     "PickCube-v1": solvePickCube,
     "StackCube-v1": solveStackCube,
-    "StackCubeSwapped-v1": solveStackCubeSwapped,
-    "StackCubeLockedRotation-v1": solveStackCube,
     "PegInsertionSide-v1": solvePegInsertionSide,
     "PlugCharger-v1": solvePlugCharger,
     "PlaceSphere-v1": solvePlaceSphere,
@@ -42,8 +39,17 @@ MP_SOLUTIONS = {
     "PullCube-v1": solvePullCube,
     "DrawSVG-v1": solveDrawSVG,
     "StackPyramid-v1": solveStackPyramid,
-    "PlaceCubeLeft-v1": solvePlaceCubeLeft,
-    "PlaceCubeRight-v1": solvePlaceCubeRight,
+    # local variants, see CUSTOM_ENVS.md. Spawn-only variants reuse the parent solver;
+    # every PlaceCube id shares one solver that reads the side off env.TARGET_Y_OFFSET
+    "StackCubeSwapped-v1": solveStackCubeSwapped,
+    "StackCubeSwappedLockedRotation-v1": solveStackCubeSwapped,
+    "StackCubeLockedRotation-v1": solveStackCube,
+    "StackCubeRestrictedSpawn-v1": solveStackCube,
+    "PlaceSphereRestrictedSpawn-v1": solvePlaceSphere,
+    "PlaceCubeLeft-v1": solvePlaceCube,
+    "PlaceCubeRight-v1": solvePlaceCube,
+    "PlaceCubeLeftLockedRotation-v1": solvePlaceCube,
+    "PlaceCubeRightLockedRotation-v1": solvePlaceCube,
 }
 
 

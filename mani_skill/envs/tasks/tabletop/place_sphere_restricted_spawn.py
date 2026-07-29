@@ -7,14 +7,17 @@ from mani_skill.utils.structs.pose import Pose
 
 @register_env("PlaceSphereRestrictedSpawn-v1", max_episode_steps=50)
 class PlaceSphereRestrictedSpawnEnv(PlaceSphereEnv):
-    """PlaceSphere-v1 but with the Sphere and Bin spawned within a restricted in-distribution
-    range taken from StackCube-v1."""
+    """PlaceSphere-v1 with the sphere and bin spawned in a restricted region.
 
-    # In-distribution ranges (<1*std) for sphere (Cube A) and bin (Cube B) spawn in StackCube
-    SPHERE_X_RANGE = (-0.08243, 0.07583)
-    SPHERE_Y_RANGE = (-0.12941, 0.13140)
-    BIN_X_RANGE = (-0.08909, 0.08211)
-    BIN_Y_RANGE = (-0.13197, 0.13146)
+    The region is the union of the per-object <1 sigma cores of StackCube-v1's spawn; both
+    objects are sampled from it, so they share one region rather than having one each.
+    """
+
+    SPAWN_X_RANGE = (-0.08909, 0.08211)
+    SPAWN_Y_RANGE = (-0.13197, 0.13146)
+    # separation between the two sampled positions, calibrated for gripper clearance --
+    # not a geometric property of either object
+    SPAWN_CLEARANCE = 0.025
 
     def _initialize_episode(self, env_idx: torch.Tensor, options: dict):
         super()._initialize_episode(env_idx, options)
@@ -22,18 +25,13 @@ class PlaceSphereRestrictedSpawnEnv(PlaceSphereEnv):
         with torch.device(self.device):
             b = len(env_idx)
 
-            gripper_clearance = 0.025
-            radius = torch.linalg.norm(torch.tensor([0.02, 0.02])) + gripper_clearance
+            radius = (
+                torch.linalg.norm(torch.tensor([0.02, 0.02])) + self.SPAWN_CLEARANCE
+            )
 
             region = (
-                [
-                    min(self.SPHERE_X_RANGE[0], self.BIN_X_RANGE[0]),
-                    min(self.SPHERE_Y_RANGE[0], self.BIN_Y_RANGE[0]),
-                ],
-                [
-                    max(self.SPHERE_X_RANGE[1], self.BIN_X_RANGE[1]),
-                    max(self.SPHERE_Y_RANGE[1], self.BIN_Y_RANGE[1]),
-                ],
+                [self.SPAWN_X_RANGE[0], self.SPAWN_Y_RANGE[0]],
+                [self.SPAWN_X_RANGE[1], self.SPAWN_Y_RANGE[1]],
             )
 
             sampler = randomization.UniformPlacementSampler(
