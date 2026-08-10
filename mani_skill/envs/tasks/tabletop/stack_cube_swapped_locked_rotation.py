@@ -5,7 +5,7 @@ from mani_skill.envs.tasks.tabletop.stack_cube_swapped import StackCubeSwappedEn
 from mani_skill.utils.registration import register_env
 
 
-@register_env("StackCubeSwappedLockedRotation-v1", max_episode_steps=50)
+@register_env("StackCubeSwappedLockedRotation-v1", max_episode_steps=250)
 class StackCubeSwappedLockedRotationEnv(
     StackCubeSwappedEnv, StackCubeLockedRotationEnv
 ):

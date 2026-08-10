@@ -4,7 +4,7 @@ from mani_skill.envs.tasks.tabletop.configurable_spawn_stack_cube import (
 from mani_skill.utils.registration import register_env
 
 
-@register_env("StackCubeRestrictedSpawn-v1", max_episode_steps=50)
+@register_env("StackCubeRestrictedSpawn-v1", max_episode_steps=250)
 class StackCubeRestrictedSpawnEnv(ConfigurableSpawnStackCubeEnv):
     """Same as StackCube-v1, but cubes are spawned within a restricted (x, y) region."""
 

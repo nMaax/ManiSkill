@@ -20,7 +20,7 @@ from mani_skill.utils.structs import Pose
 from mani_skill.utils.structs.types import Array, GPUMemoryConfig, SimConfig
 
 
-@register_env("PlaceSphere-v1", max_episode_steps=50)
+@register_env("PlaceSphere-v1", max_episode_steps=250)
 class PlaceSphereEnv(BaseEnv):
     """
     **Task Description:**

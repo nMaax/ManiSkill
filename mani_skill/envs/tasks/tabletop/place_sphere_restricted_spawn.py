@@ -5,7 +5,7 @@ from mani_skill.utils.registration import register_env
 from mani_skill.utils.structs.pose import Pose
 
 
-@register_env("PlaceSphereRestrictedSpawn-v1", max_episode_steps=50)
+@register_env("PlaceSphereRestrictedSpawn-v1", max_episode_steps=250)
 class PlaceSphereRestrictedSpawnEnv(PlaceSphereEnv):
     """PlaceSphere-v1 with the sphere and bin spawned in a restricted region.
 

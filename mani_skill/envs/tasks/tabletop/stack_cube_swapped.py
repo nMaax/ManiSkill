@@ -3,7 +3,7 @@ from mani_skill.envs.tasks.tabletop.stack_cube import StackCubeEnv
 from mani_skill.utils.registration import register_env
 
 
-@register_env("StackCubeSwapped-v1", max_episode_steps=50)
+@register_env("StackCubeSwapped-v1", max_episode_steps=250)
 class StackCubeSwappedEnv(StackCubeEnv):
     """Pick up the green cube (cubeB) and stack it on the red cube (cubeA), then let go.
 

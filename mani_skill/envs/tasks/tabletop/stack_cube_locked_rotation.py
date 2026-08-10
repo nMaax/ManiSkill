@@ -4,7 +4,7 @@ from mani_skill.envs.tasks.tabletop.configurable_spawn_stack_cube import (
 from mani_skill.utils.registration import register_env
 
 
-@register_env("StackCubeLockedRotation-v1", max_episode_steps=50)
+@register_env("StackCubeLockedRotation-v1", max_episode_steps=250)
 class StackCubeLockedRotationEnv(ConfigurableSpawnStackCubeEnv):
     """StackCube-v1 with cube z-rotation locked within a fully reachable spawn region and clearance around cubes."""
 

@@ -5,7 +5,7 @@ from mani_skill.envs.tasks.tabletop.configurable_spawn_stack_cube import (
 from mani_skill.utils.registration import register_env
 
 
-@register_env("PlaceCubeLeft-v1", max_episode_steps=50)
+@register_env("PlaceCubeLeft-v1", max_episode_steps=250)
 class PlaceCubeLeftEnv(ConfigurableSpawnStackCubeEnv):
     CUBE_X_RANGE = (-0.20, 0.12)
     # CUBE_Y_RANGE is dynamically computed (see property below)
