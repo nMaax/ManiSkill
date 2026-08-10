@@ -222,7 +222,7 @@ def register_env(
             if override:
                 from gymnasium.envs.registration import registry
 
-                logger.warn(f"Override registered env {uid}")
+                logger.debug(f"Override registered env {uid}")
                 REGISTERED_ENVS.pop(uid)
                 registry.pop(uid)
             else:
