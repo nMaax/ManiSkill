@@ -24,6 +24,7 @@ from mani_skill.examples.motionplanning.panda.solutions import (
     solvePlaceSphere,
     solveStackPyramid,
     solvePlaceCube,
+    solveStackCubeClutterRandomPick,
 )
 
 MP_SOLUTIONS = {
@@ -50,6 +51,18 @@ MP_SOLUTIONS = {
     "PlaceCubeRight-v1": solvePlaceCube,
     "PlaceCubeLeftLockedRotation-v1": solvePlaceCube,
     "PlaceCubeRightLockedRotation-v1": solvePlaceCube,
+    # StackCubeClutter-v1 still stacks cubeA on cubeB, just with extra distractors on the
+    # table, so it reuses solveStackCube unchanged
+    "StackCubeClutter-v1": solveStackCube,
+    # rotation-lock never affects grasp planning (grasp pose is always derived from the
+    # cube's live OBB), so this spawn-only variant reuses the same solver too
+    "StackCubeClutterLockedRotation-v1": solveStackCube,
+    # get_actor_obb tessellates box/cylinder/sphere collision shapes generically (see
+    # mani_skill/utils/geometry/trimesh_utils.py), so the same OBB grasp approach works for
+    # any pool member -- solveStackCubeClutterRandomPick just reads which two via
+    # env.pick_idx/env.target_idx instead of hardcoding cubeA/cubeB, see CUSTOM_ENVS.md.
+    "StackCubeClutterRandomPick-v1": solveStackCubeClutterRandomPick,
+    "StackCubeClutterRandomPickLockedRotation-v1": solveStackCubeClutterRandomPick,
 }
 
 

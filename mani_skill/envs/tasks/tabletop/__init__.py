@@ -8,6 +8,12 @@ from .plug_charger import PlugChargerEnv
 from .pull_cube import PullCubeEnv
 from .push_cube import PushCubeEnv
 from .stack_cube import StackCubeEnv
+from .stack_cube_clutter import StackCubeClutterEnv
+from .stack_cube_clutter_locked_rotation import StackCubeClutterLockedRotationEnv
+from .stack_cube_clutter_random_pick import StackCubeClutterRandomPickEnv
+from .stack_cube_clutter_random_pick_locked_rotation import (
+    StackCubeClutterRandomPickLockedRotationEnv,
+)
 from .stack_cube_swapped import StackCubeSwappedEnv
 from .stack_cube_locked_rotation import StackCubeLockedRotationEnv
 from .stack_cube_swapped_locked_rotation import StackCubeSwappedLockedRotationEnv
