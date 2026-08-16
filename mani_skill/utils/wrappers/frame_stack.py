@@ -8,6 +8,14 @@ import torch
 from mani_skill.envs.sapien_env import BaseEnv
 
 
+def _stack_leaves(values: list):
+    """Recursively stacks a list of per-frame observation values, descending into nested
+    dicts and stacking only at the tensor leaves (e.g. ``obs["agent"]["qpos"]``)."""
+    if isinstance(values[0], dict):
+        return {k: _stack_leaves([v[k] for v in values]) for k in values[0].keys()}
+    return torch.stack(values, dim=0).transpose(0, 1)
+
+
 class FrameStack(gym.ObservationWrapper):
     """Observation wrapper that stacks the observations in a rolling manner.
 
@@ -49,7 +57,7 @@ class FrameStack(gym.ObservationWrapper):
         assert len(self.frames) == self.num_stack, (len(self.frames), self.num_stack)
         if self.use_dict:
             return {
-                k: torch.stack([x[k] for x in self.frames], dim=0).transpose(0, 1)
+                k: _stack_leaves([x[k] for x in self.frames])
                 for k in self.observation_space.keys()
             }
         else:
