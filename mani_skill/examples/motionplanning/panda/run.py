@@ -63,6 +63,9 @@ MP_SOLUTIONS = {
     # env.pick_idx/env.target_idx instead of hardcoding cubeA/cubeB, see CUSTOM_ENVS.md.
     "StackCubeClutterRandomPick-v1": solveStackCubeClutterRandomPick,
     "StackCubeClutterRandomPickLockedRotation-v1": solveStackCubeClutterRandomPick,
+    # same-size is a spawn/geometry-only change too (see stack_cube_clutter_same_size.py),
+    # so it reuses the same generic pool-based solver unchanged
+    "StackCubeClutterRandomPickSameSizeLockedRotation-v1": solveStackCubeClutterRandomPick,
 }
 
 

@@ -14,6 +14,13 @@ from .stack_cube_clutter_random_pick import StackCubeClutterRandomPickEnv
 from .stack_cube_clutter_random_pick_locked_rotation import (
     StackCubeClutterRandomPickLockedRotationEnv,
 )
+from .stack_cube_clutter_same_size import StackCubeClutterSameSizeEnv
+from .stack_cube_clutter_same_size_locked_rotation import (
+    StackCubeClutterSameSizeLockedRotationEnv,
+)
+from .stack_cube_clutter_random_pick_same_size_locked_rotation import (
+    StackCubeClutterRandomPickSameSizeLockedRotationEnv,
+)
 from .stack_cube_swapped import StackCubeSwappedEnv
 from .stack_cube_locked_rotation import StackCubeLockedRotationEnv
 from .stack_cube_swapped_locked_rotation import StackCubeSwappedLockedRotationEnv
