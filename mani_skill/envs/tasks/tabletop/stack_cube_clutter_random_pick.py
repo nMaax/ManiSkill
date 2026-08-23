@@ -88,6 +88,26 @@ class StackCubeClutterRandomPickEnv(StackCubeClutterEnv):
             self.pick_idx[env_idx] = top2[:, 0]
             self.target_idx[env_idx] = top2[:, 1]
 
+    # WARN: without this, replay on another backend silently re-draws
+    # them due to a different RNG across backends
+    def get_state_dict(self):
+        state_dict = super().get_state_dict()
+        state_dict["pick_idx"] = self.pick_idx.clone()
+        state_dict["target_idx"] = self.target_idx.clone()
+        return state_dict
+
+    def set_state_dict(self, state: dict, env_idx: torch.Tensor = None):
+        super().set_state_dict(state, env_idx)
+        if "pick_idx" in state and "target_idx" in state:
+            pick_idx = state["pick_idx"].to(device=self.device, dtype=torch.long)
+            target_idx = state["target_idx"].to(device=self.device, dtype=torch.long)
+            if env_idx is None:
+                self.pick_idx[:] = pick_idx
+                self.target_idx[:] = target_idx
+            else:
+                self.pick_idx[env_idx] = pick_idx[env_idx]
+                self.target_idx[env_idx] = target_idx[env_idx]
+
     def _gather_pool_scalar(self, values: torch.Tensor, idx: torch.Tensor) -> torch.Tensor:
         """values: (num_envs, pool_size) -> (num_envs,), selecting values[i, idx[i]] per row."""
         return torch.gather(values, 1, idx[:, None]).squeeze(1)
