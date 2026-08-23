@@ -1,6 +1,7 @@
 import torch
 
 from mani_skill.envs.tasks.tabletop.stack_cube_clutter import StackCubeClutterEnv
+from mani_skill.utils import common
 from mani_skill.utils.registration import register_env
 
 _SHAPE_TO_INT = {"cube": 0, "cylinder": 1, "sphere": 2}
@@ -99,8 +100,8 @@ class StackCubeClutterRandomPickEnv(StackCubeClutterEnv):
     def set_state_dict(self, state: dict, env_idx: torch.Tensor = None):
         super().set_state_dict(state, env_idx)
         if "pick_idx" in state and "target_idx" in state:
-            pick_idx = state["pick_idx"].to(device=self.device, dtype=torch.long)
-            target_idx = state["target_idx"].to(device=self.device, dtype=torch.long)
+            pick_idx = common.to_tensor(state["pick_idx"], device=self.device).long()
+            target_idx = common.to_tensor(state["target_idx"], device=self.device).long()
             if env_idx is None:
                 self.pick_idx[:] = pick_idx
                 self.target_idx[:] = target_idx
