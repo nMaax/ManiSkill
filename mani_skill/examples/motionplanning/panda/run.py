@@ -10,6 +10,7 @@ import os.path as osp
 from mani_skill.utils.wrappers.record import RecordEpisode
 from mani_skill.trajectory.merge_trajectory import merge_trajectories
 from mani_skill.examples.motionplanning.panda.solutions import (
+    solvePushBlock,
     solvePushCube,
     solvePickCube,
     solveStackCube,
@@ -51,6 +52,7 @@ MP_SOLUTIONS = {
     "PlaceCubeRight-v1": solvePlaceCube,
     "PlaceCubeLeftLockedRotation-v1": solvePlaceCube,
     "PlaceCubeRightLockedRotation-v1": solvePlaceCube,
+    "PushBlock-v1": solvePushBlock,
     # StackCubeClutter-v1 still stacks cubeA on cubeB, just with extra distractors on the
     # table, so it reuses solveStackCube unchanged
     "StackCubeClutter-v1": solveStackCube,

@@ -6,6 +6,7 @@ from .pick_cube import PickCubeEnv
 from .pick_single_ycb import PickSingleYCBEnv
 from .plug_charger import PlugChargerEnv
 from .pull_cube import PullCubeEnv
+from .push_block import PushBlockEnv
 from .push_cube import PushCubeEnv
 from .stack_cube import StackCubeEnv
 from .stack_cube_clutter import StackCubeClutterEnv
