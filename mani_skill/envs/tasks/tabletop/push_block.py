@@ -39,11 +39,8 @@ class HighFrictionTableSceneBuilder(TableSceneBuilder):
                 shape.set_physical_material(table_material)
 
 
-# 500, not BESO's 300: BESO's oracle emits one velocity command per control step and
-# pushes continuously, whereas this suite is plan-and-execute -- every stroke carries its
-# own accel/decel ramp, so the same motion costs several times the steps. At 350 the limit,
-# not the solver, was the binding constraint on xarm6_nogripper (7 of 30 runs truncated);
-# 500 clears all of them with headroom. Not comparable to BESO's eval_n_steps.
+# Headroom, not BESO's 300-step budget: plan-and-execute costs more steps per motion than
+# BESO's continuous oracle. Worst motion-planned episode over 30 seeds is 345.
 @register_env("PushBlock-v1", max_episode_steps=500)
 class PushBlockEnv(BaseEnv):
     """
@@ -52,10 +49,15 @@ class PushBlockEnv(BaseEnv):
     push cubeA and cubeB into two distinct target zones. Either cube may end up in
     either target to mark a success.
 
+    The layout is BESO's own, translated into world coordinates: the push runs along +y,
+    laterally across the robot's front, and the two targets are separated along x, the
+    robot's radial direction. See ``WORKSPACE_CENTER_X`` for why the axes are this way
+    round and not the other.
+
     **Randomizations:**
     - cubeA and cubeB both spawn anywhere in one shared region, kept apart by a
-      rejection sample on their LATERAL (y) separation only, as in BESO -- so which
-      cube is the left one and which the right one is always well defined
+      rejection sample on their LATERAL (x) separation only, as in BESO -- so which
+      cube is the near one and which the far one is always well defined
     - targetA/targetB swap sides at random and carry BESO's 5~7.5mm jitter
     - cubeA/cubeB spawn with a random z-rotation (unlocked, matching BESO), so
       reorientation is part of the task's difficulty just as in BESO's oracle
@@ -86,25 +88,70 @@ class PushBlockEnv(BaseEnv):
     SUCCESS_RADIUS = 0.05
     LOCK_Z_ROTATION = False
 
-    # +X is the push axis; Y is the lateral axis, the one the two targets are separated along.
-    # BESO uses the transposed convention (push along +y, targets separated along x),
-    # so its `x`/`y` becomes our `y`/`x` .
-    CUBE_X_RANGE = (-0.30, -0.15)
-    CUBE_Y_RANGE = (-0.14, 0.14)
+    # +Y pushes, X separates the targets -- BESO's own layout, not a transposition of it.
+    # BESO's base sits at its frame's origin, so swapping its axis names rotates the task
+    # 90 degrees about the arm and lands the targets at 99% of the xArm6's reach.
+    # Constants below are BESO's, translated by the xarm6 base offset (-0.522).
+    WORKSPACE_CENTER_X = -0.122  # BESO's workspace_center_x = 0.4, in front of the base
 
-    # Minimum LATERAL separation between the two cubes
-    MIN_CUBE_LATERAL_DIST = 0.08
+    CUBE_LATERAL_RANGE = (-0.222, -0.022)  # centre +- 0.10, BESO's RANDOM_X_SHIFT
+    CUBE_PUSH_AXIS_RANGE = (-0.35, -0.05)  # -0.20 +- 0.15, BESO's RANDOM_Y_SHIFT
+
+    # Minimum LATERAL separation between the two cubes. BESO's MIN_BLOCK_DIST.
+    MIN_CUBE_LATERAL_DIST = 0.10
     NUM_RESET_ATTEMPTS = 100
 
-    TARGET_X = 0.12
-    TARGET_Y_OFFSET = 0.09
+    TARGET_PUSH_AXIS = 0.20  # BESO's target y
+    TARGET_LATERAL_OFFSET = 0.12  # BESO's +-0.12 "add", about WORKSPACE_CENTER_X
 
     # BESO jitters the targets by +-0.0075 along the push axis and +-0.005 laterally
     TARGET_PUSH_AXIS_JITTER = 0.0075
     TARGET_LATERAL_JITTER = 0.005
 
+    CUBE_HALF_DIAGONAL = CUBE_HALF_SIZE * np.sqrt(2)
+
+    # How far the pusher's contact surface reaches from the TCP along the push axis,
+    # measured off the collision meshes (xarm6's link6 flange, panda's closed fingers).
+    # Solvers size their contact standoff from this. BESO's pin is 0.001.
+    PUSHER_RADIUS = {"xarm6_nogripper": 0.052, "panda": 0.026}
+
+    # Where the TCP starts, behind every cube. BESO uses -0.40; a 52mm flange needs more
+    # clearance than its 1mm pin or the wrist starts overlapping a cube (6.5% of resets).
+    START_LINE_Y = round(
+        CUBE_PUSH_AXIS_RANGE[0] - (max(PUSHER_RADIUS.values()) + CUBE_HALF_DIAGONAL + 0.02),
+        3,
+    )
+
+    # BESO resets its effector to a fixed pose already at pushing height, so its data
+    # contains no descent. BESO's [0.3, -0.4], in world coordinates.
+    START_TCP_XY = (-0.222, START_LINE_Y)
+
+    # TCP at START_TCP_XY, pushing height, wrist down. Solved offline; regenerate if
+    # START_TCP_XY moves.
+    _START_QPOS = {
+        "xarm6_nogripper": np.array(
+            [-0.98269925, 0.90699818, -1.31737271, 0.00001767, 0.41037425, -0.98271620]
+        ),
+        # last two are the fingers: panda pushes with a closed fist
+        "panda": np.array(
+            [
+                -0.74325794,
+                0.66171743,
+                -0.10265828,
+                -2.00070827,
+                0.13534920,
+                2.65608579,
+                -0.15882563,
+                0.0,
+                0.0,
+            ]
+        ),
+    }
+
+    # 0.0, not the usual 0.02: BESO's reset is exact, and at pushing height 0.02rad of
+    # joint noise drives the wrist through the table.
     def __init__(
-        self, *args, robot_uids="xarm6_nogripper", robot_init_qpos_noise=0.02, **kwargs
+        self, *args, robot_uids="xarm6_nogripper", robot_init_qpos_noise=0.0, **kwargs
     ):
         self.robot_init_qpos_noise = robot_init_qpos_noise
         super().__init__(*args, robot_uids=robot_uids, **kwargs)
@@ -112,16 +159,19 @@ class PushBlockEnv(BaseEnv):
     @property
     def _default_sim_config(self):
         return SimConfig(
-            sim_freq=100,
+            sim_freq=240,  # PyBullet's default fixedTimeStep, i.e. BESO's contact dt
             control_freq=10,  # BESO's control frequency
             gpu_memory_config=GPUMemoryConfig(
                 found_lost_pairs_capacity=2**25, max_rigid_patch_count=2**18
             ),
         )
 
+    # The workspace is not centred on y=0: cubes spawn right, targets sit left.
+    _WORKSPACE_CENTROID = [-0.122, -0.07, 0.05]
+
     @property
     def _default_sensor_configs(self):
-        pose = sapien_utils.look_at(eye=[0.3, 0, 0.6], target=[-0.1, 0, 0.1])
+        pose = sapien_utils.look_at(eye=[0.40, -0.07, 0.60], target=self._WORKSPACE_CENTROID)
         return [
             CameraConfig(
                 "base_camera",
@@ -136,13 +186,39 @@ class PushBlockEnv(BaseEnv):
 
     @property
     def _default_human_render_camera_configs(self):
-        pose = sapien_utils.look_at([0.6, 0.7, 0.6], [0.0, 0.0, 0.35])
+        # BESO's own DEFAULT_CAMERA_POSE (1.0, 0, 0.75), translated by the base offset.
+        pose = sapien_utils.look_at([0.478, 0, 0.75], self._WORKSPACE_CENTROID)
         return CameraConfig(
             "render_camera", pose=pose, width=512, height=512, fov=1, near=0.01, far=100
         )
 
+    def _pusher_links(self):
+        """The links that contact the cubes: bare wrist on xarm6, closed fingers on panda."""
+        if self.robot_uids == "panda":
+            return [
+                self.agent.robot.links_map["panda_leftfinger"],
+                self.agent.robot.links_map["panda_rightfinger"],
+            ]
+        return [self.agent.tcp]
+
     def _load_agent(self, options: dict):
         super()._load_agent(options, self._ROBOT_BASE_POSE[self.robot_uids])
+
+        # BESO's suction head declares lateral_friction 1.0 and PyBullet multiplies the
+        # two bodies' frictions; PhysX averages, so the pusher's own material matters.
+        # Left alone it is SAPIEN's 0.3 (xarm6) or ManiSkill's 2.0 gripper pads (panda).
+        material = sapien.pysapien.physx.PhysxMaterial(
+            static_friction=self.CUBE_FRICTION,
+            dynamic_friction=self.CUBE_FRICTION,
+            restitution=0,
+        )
+        for link in self._pusher_links():
+            for obj in link._objs:
+                component = obj.entity.find_component_by_type(
+                    sapien.physx.PhysxRigidBodyComponent
+                )
+                for shape in component.collision_shapes:
+                    shape.set_physical_material(material)
 
     def _build_pusher_cube(self, name: str, color):
         """A cube as BESO's block.urdf: 4cm, 10g, friction 1.0."""
@@ -207,28 +283,50 @@ class PushBlockEnv(BaseEnv):
             b = len(env_idx)
             self.table_scene.initialize(env_idx)
 
+            # Start at pushing height, as BESO does, so no episode opens with a descent.
+            # BaseEnv.reset() syncs controller targets from qpos afterwards.
+            qpos = self._START_QPOS[self.robot_uids]
+            qpos = (
+                self._episode_rng.normal(
+                    0, self.robot_init_qpos_noise, (b, len(qpos))
+                )
+                + qpos
+            )
+            if self.robot_uids == "panda":
+                qpos[:, -2:] = 0.0
+            self.agent.reset(qpos)
+
             def sample_cube_xy(n):
                 xy = torch.zeros((n, 2))
                 xy[:, 0] = (
-                    torch.rand(n) * (self.CUBE_X_RANGE[1] - self.CUBE_X_RANGE[0])
-                    + self.CUBE_X_RANGE[0]
+                    torch.rand(n)
+                    * (self.CUBE_LATERAL_RANGE[1] - self.CUBE_LATERAL_RANGE[0])
+                    + self.CUBE_LATERAL_RANGE[0]
                 )
                 xy[:, 1] = (
-                    torch.rand(n) * (self.CUBE_Y_RANGE[1] - self.CUBE_Y_RANGE[0])
-                    + self.CUBE_Y_RANGE[0]
+                    torch.rand(n)
+                    * (self.CUBE_PUSH_AXIS_RANGE[1] - self.CUBE_PUSH_AXIS_RANGE[0])
+                    + self.CUBE_PUSH_AXIS_RANGE[0]
                 )
                 return xy
 
             cubeA_xy = sample_cube_xy(b)
             cubeB_xy = sample_cube_xy(b)
             for _ in range(self.NUM_RESET_ATTEMPTS):
+                # Lateral only, as BESO does -- never Euclidean, so one cube may sit
+                # directly behind the other.
                 too_close = (
-                    torch.abs(cubeB_xy[:, 1] - cubeA_xy[:, 1])
+                    torch.abs(cubeB_xy[:, 0] - cubeA_xy[:, 0])
                     <= self.MIN_CUBE_LATERAL_DIST
                 )
                 if not too_close.any():
                     break
-                cubeB_xy[too_close] = sample_cube_xy(int(too_close.sum()))
+                # Redraw BOTH cubes, as BESO's outer loop does. The range is 0.20 wide
+                # and the gap 0.10, so a cubeA near the middle leaves no valid cubeB at
+                # all: resampling only the partner then fails outright, for P = 2/101.
+                n = int(too_close.sum())
+                cubeA_xy[too_close] = sample_cube_xy(n)
+                cubeB_xy[too_close] = sample_cube_xy(n)
             cubeA_xyz = torch.zeros((b, 3))
             cubeA_xyz[:, :2] = cubeA_xy
             cubeA_xyz[:, 2] = self.CUBE_HALF_SIZE
@@ -239,20 +337,24 @@ class PushBlockEnv(BaseEnv):
             flip = (torch.randint(0, 2, (b,)) * 2 - 1).float()
             targetA_xyz = torch.zeros((b, 3))
             targetA_xyz[:, 0] = (
-                self.TARGET_X + (torch.rand(b) * 2 - 1) * self.TARGET_PUSH_AXIS_JITTER
+                self.WORKSPACE_CENTER_X
+                + flip * self.TARGET_LATERAL_OFFSET
+                + (torch.rand(b) * 2 - 1) * self.TARGET_LATERAL_JITTER
             )
             targetA_xyz[:, 1] = (
-                flip * self.TARGET_Y_OFFSET
-                + (torch.rand(b) * 2 - 1) * self.TARGET_LATERAL_JITTER
+                self.TARGET_PUSH_AXIS
+                + (torch.rand(b) * 2 - 1) * self.TARGET_PUSH_AXIS_JITTER
             )
             targetA_xyz[:, 2] = 1e-3
             targetB_xyz = torch.zeros((b, 3))
             targetB_xyz[:, 0] = (
-                self.TARGET_X + (torch.rand(b) * 2 - 1) * self.TARGET_PUSH_AXIS_JITTER
+                self.WORKSPACE_CENTER_X
+                - flip * self.TARGET_LATERAL_OFFSET
+                + (torch.rand(b) * 2 - 1) * self.TARGET_LATERAL_JITTER
             )
             targetB_xyz[:, 1] = (
-                -flip * self.TARGET_Y_OFFSET
-                + (torch.rand(b) * 2 - 1) * self.TARGET_LATERAL_JITTER
+                self.TARGET_PUSH_AXIS
+                + (torch.rand(b) * 2 - 1) * self.TARGET_PUSH_AXIS_JITTER
             )
             targetB_xyz[:, 2] = 1e-3
 

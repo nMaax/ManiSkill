@@ -38,4 +38,5 @@ class XArm6RobotiqMotionPlanningSolver(TwoFingerGripperMotionPlanningSolver):
 
 
 class XArm6NoGripperMotionPlanningSolver(BaseMotionPlanningSolver):
-    MOVE_GROUP = "link6"  # xarm6_nogripper's ee_link_name; no "eef" SRDF tag to fall
+    # ee_link_name: the bare-wrist URDF has no "eef" SRDF tag to fall back on.
+    MOVE_GROUP = "link6"

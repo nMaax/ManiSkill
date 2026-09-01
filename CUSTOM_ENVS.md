@@ -29,7 +29,7 @@ negative `x` is *closer* to the robot. `+y` is to the robot's left.
 | `PlaceCubeLeftLockedRotation-v1` | −0.20 … 0.12 | −0.21 … 0.05 | **locked** | A at B +0.16 y | `place_cube_left_locked_rotation.py` |
 | `PlaceCubeRightLockedRotation-v1` | −0.20 … 0.12 | −0.05 … 0.21 | **locked** | A at B −0.16 y | `place_cube_right_locked_rotation.py` |
 | `PlaceSphereRestrictedSpawn-v1` | −0.089 … 0.082 | −0.132 … 0.131 | inherited | sphere in bin | `place_sphere_restricted_spawn.py` |
-| `PushBlock-v1` | −0.16 … −0.08 (cubes), 0.13 (targets, near-fixed) | ±0.14 (cubes, shared), ±0.09 (targets, near-fixed) | free | push A,B into two **distinct** targets, order-agnostic (matches BESO's own success rule) | `push_block.py` |
+| `PushBlock-v1` *(push runs along **y**, not x — see below)* | −0.222 … −0.022 (cubes), −0.122 ± 0.12 (targets) | −0.35 … −0.05 (cubes, shared), 0.20 (targets, near-fixed) | free | push A,B into two **distinct** targets, order-agnostic (matches BESO's own success rule) | `push_block.py` |
 
 **There is exactlu one file per registered environment.**, e.g. `PlaceCubeLeftLockedRotation-v1` is in `place_cube_left_locked_rotation.py`.
 
@@ -298,13 +298,18 @@ pinned cubeA/targetA to the right and cubeB/targetB to the left (added for the s
 **The two cubes are kept apart LATERALLY, not by Euclidean distance.** BESO's rejection test is
 `np.linalg.norm(block_translation[0] - avoid[0])` (`block_pushing_multimodal.py:186`) — index `[0]`
 is the axis its two targets are separated along, so the constraint is one-dimensional and
-`MIN_BLOCK_DIST = 0.1` is a *lateral* gap. `MIN_CUBE_LATERAL_DIST = 0.08` here reproduces that on
-the `y` axis (BESO pushes along `+y` with targets separated in `x`; we push along `+x` with targets
-separated in `y`, so the two conventions are transposed). This matters more than it looks: it is
-what keeps "left cube"/"right cube" always well defined, and therefore what makes the four
-`(cube, target)` goal modes below meaningful. A Euclidean test would happily place one cube
-directly behind the other. Note the lateral constraint implies the Euclidean one, so it is
-strictly stricter than the `UniformPlacementSampler` it replaced.
+`MIN_BLOCK_DIST = 0.1` is a *lateral* gap, and `MIN_CUBE_LATERAL_DIST = 0.10` reproduces it exactly
+on the `x` axis. This matters more than it looks: it is what keeps "near cube"/"far cube" always
+well defined, and therefore what makes the four `(cube, target)` goal modes below meaningful. A
+Euclidean test would happily place one cube directly behind the other.
+
+**The rejection loop must redraw *both* cubes, not just the second one.** With BESO's real numbers
+the lateral range is 0.20 wide and the required gap is 0.10, so a cubeA landing near the middle of
+the range leaves **no** valid position for cubeB anywhere: holding cubeA fixed and resampling only
+its partner can never succeed, and the loop falls through with an invalid pair. Analytically that is
+`P = 2/101 ≈ 2%` of episodes, and 2.15% was measured before the fix. BESO's outer loop redraws both
+blocks for exactly this reason. Verified 0 violations in 2000 resets afterwards. The pre-rotation
+ranges (0.28 wide, 0.08 gap) had enough slack to hide the same bug entirely.
 
 **Target jitter follows BESO's axes.** ±0.0075 along the push axis, ±0.005 laterally
 (`TARGET_PUSH_AXIS_JITTER`/`TARGET_LATERAL_JITTER`, from BESO's `0.05 * RANDOM_Y_SHIFT` and
@@ -312,75 +317,107 @@ strictly stricter than the `UniformPlacementSampler` it replaced.
 
 ### Dimensional audit against BESO
 
-Measured, not eyeballed: BESO's reset was replicated analytically (n=20000) and ours sampled from
-3000 real `env.reset()` calls. BESO pushes along `+y` with targets separated in `x`; we push along
-`+x` with targets separated in `y`, so the two conventions are transposed and the rows below are
-stated in role terms, not axis names. All figures in metres, as `mean [min, max]`.
+Measured, not eyeballed: BESO's reset replicated analytically, ours sampled from 1500 real
+`env.reset()` calls per robot. All figures in metres, as `mean [min, max]`.
 
 | quantity | BESO | ours | verdict |
 |---|---|---|---|
-| cube edge / mass / friction | 0.04 / 0.010 / 1.0 | 0.04 / 0.010 / 1.0 | **match** (mass only since the `_mass` fix above) |
+| cube edge / mass / friction | 0.04 / 0.010 / 1.0 | 0.04 / 0.010 / 1.0 | **match** |
 | rotational inertia | 3x uniform-cube | 3x uniform-cube | **match** (`CUBE_INERTIA_SCALING`) |
 | goal tolerance | 0.05 | 0.05 | **match** |
 | control frequency | 10 Hz | 10 Hz | **match** |
-| cube-cube lateral gap | 0.125 [0.100, 0.199] | 0.143 [0.080, 0.275] | close; our floor is 0.08 vs BESO's 0.10, and our spread is wider |
-| target-target separation | 0.240 [0.230, 0.250] | 0.180 [0.170, 0.190] | **0.75x BESO** |
-| push-axis travel to nearest target | 0.400 [0.243, 0.557] | 0.355 [0.274, 0.437] | 0.89x BESO; range still narrower |
-| euclidean cube -> nearest target | 0.406 [0.244, 0.567] | 0.358 [0.275, 0.441] | 0.88x BESO |
+| physics timestep | 1/240 (PyBullet default) | 1/240 (`sim_freq=240`) | **match** |
+| cube–cube lateral gap | 0.125 [0.100, 0.199] | 0.124 [0.100, 0.194] | **match** |
+| target–target separation | 0.240 [0.230, 0.250] | 0.240 [0.230, 0.250] | **match** |
+| push travel to nearest target | 0.400 [0.243, 0.557] | 0.405 [0.245, 0.562] | **match** |
+| cube reach radius from base | 0.447 [0.304, 0.610] | 0.455 [0.307, 0.606] | **match** (xarm6) |
+| target reach radius from base | 0.344 / 0.557 | 0.336 / 0.564 | **match** (xarm6) |
 
-**Push travel was raised from 0.25 to 0.35 by moving the cubes back, not the targets forward.**
-`CUBE_X_RANGE` went from `(-0.16, -0.08)` to `(-0.30, -0.15)`. Both ends of the workspace are
-reach-limited, and in both cases the binding constraint is what the *motion planner can plan*, not
-what the arm can reach and not where the table ends — the table's far edge is at +0.485, ~32cm
-beyond anything usable:
+**The task frame is BESO's, and it is rotated 90° from where a naive port puts it.** This is the
+single change that made every row above line up, and it is worth being explicit about because the
+mistake is easy and silent.
 
-- **Far side:** plannable x at z=0.02 tops out at +0.16 (xarm6) / +0.18 (panda). A corrective push
-  after an overshoot needs the TCP at `TARGET_X + 0.025`, so `TARGET_X = 0.13` is already within
-  2.3cm of the ceiling. The targets cannot move outward.
-- **Near side:** the solver approaches by descending straight down from `retreat_height`, and that
-  screw descent stops being plannable below x = -0.36 (xarm6, worst at y=0) / -0.42 (panda). This
-  is far tighter than raw pose reachability, which extends past -0.52 — an RRTConnect probe of pose
-  reachability suggested cubes could go back to -0.42 and it was wrong, because the solver never
-  uses RRTConnect for the approach. **Measure the descent, not the pose.** A first attempt at
-  `(-0.36, -0.15)` cost panda 6 of 20 seeds to unplannable approaches before the floor was pulled
-  back to -0.30.
+BESO's docstrings invite you to read its `x`/`y` as our `y`/`x`. You cannot: **BESO's robot base is
+at the origin of that frame**, so swapping the axis names rotates the task about the arm. BESO
+pushes along `+y`, *laterally across the robot's front*, with the two targets separated along `x`,
+the robot's radial direction. Four independent confirmations in its source:
 
-The remaining gap to BESO's 0.40 is that last stretch of near-side workspace, which is planner-
-limited rather than geometry-limited; a two-stage descent or a non-screw approach could recover it.
+- the xArm is loaded at `[0, 0, 0]` with no rotation;
+- `WORKSPACE_BOUNDS = ((0.15, -0.5), (0.7, 0.5))` — `x` forward, `y` symmetric and lateral;
+- `INITIAL_JOINT_POSITIONS[0] = −0.9255 rad = −53.02°` agrees to a tenth of a degree with
+  `atan2(−0.4, 0.3) = −53.13°`, the bearing of its own effector reset point;
+- `workspace.urdf` scales `plane.obj` by `0.0167` in x and `0.0333` in y — a mat twice as wide
+  laterally as it is deep, matching the 0.24 × 0.55 object region.
 
-Two differences remain structural:
+What that buys, concretely. A BESO push traces a shallow arc at near-constant radius
+(0.447 → 0.40 → 0.447), driven almost entirely by joint1 sweeping ~53°, with the shoulder and elbow
+holding a fixed extension. Pushing *radially* instead — the naive port — sends the cube from
+r = 0.222 to r = 0.642 while joint1 never moves: the arm starts folded against its own base and
+finishes at `sqrt(0.65² + 0.247²) = 0.695` from the shoulder, **~99% of the xArm6's 0.70 m reach**,
+precisely where it must place a cube within 5 cm.
 
-1. **Travel is still less varied than BESO's** — 0.27–0.44 against 0.24–0.56.
-2. **Targets sit *inside* the cube spread, where BESO's sit outside it.** BESO's cubes span 0.20
-   laterally against targets 0.24 apart, so a block essentially always has to move *outward* to
-   reach a target. Ours span 0.28 laterally against targets 0.18 apart, so cubes frequently start
-   further out than the targets and must come *inward*. This also changes how often the crossing
-   assignment is the geometrically natural one.
-3. **The gap between the two goal zones is tighter.** BESO: 0.24 separation with a 0.05 tolerance
-   leaves 0.14 of clear space between zone edges. Ours: 0.18 with the same tolerance leaves 0.08.
-   Widening the targets to BESO's 0.24 (y=±0.12) pushes them to a lateral offset where the far-side
-   plannable band shrinks to about +0.14, below the +0.155 a corrective push needs — so this one is
-   genuinely blocked by reach.
+That is why the old notes concluded BESO's 0.24 m target separation and 0.40 m travel were "blocked
+by reach". They were only unreachable in the rotated frame; in BESO's own frame they sit comfortably
+mid-envelope, which is why BESO could choose those numbers in the first place. Everything the old
+audit listed as a structural gap — narrower travel, targets inside the cube spread, a tighter
+corridor between goal zones — closed with the rotation, at no cost.
 
-**Contact height is right; pusher *shape* is not.** Measured world-z extents with the TCP commanded
-to `push_height = CUBE_HALF_SIZE = 0.02`, against a cube spanning z=0.000..0.040 with its centre of
-mass at 0.020:
+Anchoring: `WORKSPACE_CENTER_X = -0.122` is BESO's `workspace_center_x = 0.4` translated by the
+xarm6 base offset (`-0.522 + 0.4`). Panda's base is at `-0.615` and sees the same table coordinates,
+so it reaches ~9 cm further — verified still well inside its envelope (worst pose r = 0.727).
+
+**The episode starts at pushing height, as BESO's does.** BESO pins
+`target_effector_translation[-1] = effector_height` on every control step, and its reset teleports
+the effector to a fixed pose already at that height, so its data contains no descent anywhere. Here
+the xarm6 TCP would otherwise start at z = 0.283 and panda's at 0.182, opening every episode with a
+26 cm descent that has no BESO counterpart — and that descent is exactly the motion the old notes
+flagged as unplannable below x = −0.36. `_initialize_episode` now overrides the table scene's rest
+keyframe with `_START_QPOS`, a per-robot IK solution placing the TCP at `START_TCP_XY` at pushing
+height, pointing straight down.
+
+`robot_init_qpos_noise` defaults to **0.0** here rather than this fork's usual 0.02: BESO's reset is
+exact, and at pushing height ±0.02 rad of joint noise is enough to drive the wrist a centimetre or
+two through the table. The argument is still accepted if you want the jitter.
+
+`START_LINE_Y = -0.45`, not BESO's own `-0.40`. BESO's start sits exactly 0.05 behind its nearest
+possible block, which is fine for a 1 mm pin but not for a 52 mm flange: at `-0.40`, 6.5% of resets
+begin with the wrist overlapping a cube. The line is derived as
+`CUBE_PUSH_AXIS_RANGE[0] − (max pusher radius + cube half-diagonal + margin)` and moves back towards
+BESO's value when a thin pusher lands.
+
+**Contact height matches BESO; pusher *shape* does not.** Measured world-z extents with the TCP at
+`push_height = CUBE_HALF_SIZE = 0.02`, against a cube spanning z = 0.000..0.040 with its CoM at
+0.020:
 
 | pusher | z extent | contact band on the cube | band midpoint vs CoM |
 |---|---|---|---|
-| BESO suction tip (pin, r=0.001, 0.029 below the flange at `EFFECTOR_HEIGHT=0.06`) | 0.017 .. 0.045 | 0.017 .. 0.040 | +0.0085 |
+| BESO suction tip (pin, r = 0.001, 0.029 below the flange at `EFFECTOR_HEIGHT = 0.06`) | 0.017 .. 0.045 | 0.017 .. 0.040 | +0.0085 |
 | `xarm6_nogripper` `link6` flange | 0.018 .. 0.048 | 0.018 .. 0.040 | +0.009 |
 | `panda` closed fingers | 0.012 .. 0.067 | 0.012 .. 0.040 | +0.006 |
 
-So the *height* matches BESO closely — all three push above the centre of mass by a comparable
-margin, and that is BESO's design, not an error here. What does not match is the pusher's footprint:
-BESO pushes with a **2mm-diameter pin**, `xarm6_nogripper` with a **75 x 90mm curved flange**, panda
-with a **24 x 26mm pair of flat fingers**. A broad curved surface catches a rotated cube's corner and
-levers it; a pin does not. That, plus the mass bug above, is why xarm6 tumbles cubes and BESO does
-not — and lowering `push_height` would be compensating for the wrong pusher shape rather than fixing
-it. For reference, `push_height=0.014` measures 26/30 vs 25/30 on xarm6 with shorter episodes, but
-puts the contact band *below* BESO's; the faithful fix is a thin pusher on the wrist, not a lower
-wrist.
+All three push above the centre of mass by a comparable margin, which is BESO's design, not an
+error. The footprint is another matter. `PUSHER_RADIUS` records how far each pusher's contact
+surface reaches from the TCP along the push axis, **measured off the collision mesh** rather than
+guessed: **0.0516** for xarm6's flange (0.0374 the other way — it is asymmetric, but the wrist's yaw
+is pinned by the fixed downward push orientation, so only the forward figure ever touches a cube)
+and **0.026** for panda's closed fingers, against BESO's **0.001**.
+
+Two consequences follow from that number, and both were live bugs:
+
+1. **The solver must stand the pusher's radius off the cube** — see the motion planning section.
+2. **A planar detour around a cube needs `pusher_radius + cube half-diagonal` ≈ 0.080 of clearance
+   for xarm6, against BESO's 0.100 minimum cube separation.** Passing *between* two cubes therefore
+   needs 0.160 of gap and has 0.100 — it does not fit, and the push line itself clears the other
+   cube by only 0.020. BESO's pin needs 0.029 against the same 0.100, three times the margin. This
+   is why the solver still lifts over cubes rather than routing around them in-plane: fully planar
+   transits are blocked on a thin pusher, not on the routing logic.
+
+**Friction is set on the pusher too, not just the cubes and table.** BESO's suction head and tip
+both declare `lateral_friction 1.0`, and PyBullet *multiplies* the two bodies' frictions
+(1.0 × 1.0 = 1.0). PhysX *averages*, and the pusher would otherwise carry SAPIEN's 0.3 default on
+xarm6's `link6` or ManiSkill's 2.0 gripper pads on panda — 0.65 and 1.5 against a μ = 1.0 cube.
+`_load_agent` post-processes the pusher links' collision shapes, the same "build, then fix up the
+material" pattern `HighFrictionTableSceneBuilder` uses for the table.
 
 **Rotation is unlocked, matching BESO.** BESO's oracle has explicit `orient_block_left`/
 `orient_block_right` correction phases — i.e. cube z-rotation is *not* locked there, and
@@ -420,25 +457,15 @@ table's already-built collision shape instead of re-texturing it), and a 0.05m s
 kwargs at all, so cube construction bypasses it entirely in favor of `push_t.py`'s
 `builder._mass` + `PhysxMaterial` pattern.
 
-**Control frequency is matched to BESO too.** `_default_sim_config` overrides `control_freq=10`
-(ManiSkill's own default is 20); `sim_freq=100` divides evenly either way, so this is a plain
-config override, not a structural change. `max_episode_steps=350` is therefore a literal match to
-BESO's own horizon (350 steps @ 10Hz = 35s wall-clock), not an approximation — well above this
-fork's usual two-object convention of 250 steps, to leave room for two sequential contact-rich
-pushes.
+**Control frequency and physics timestep are both matched to BESO.** `_default_sim_config` sets
+`control_freq=10` (ManiSkill's default is 20) and `sim_freq=240`, giving 24 substeps per control
+step — exactly PyBullet's default `fixedTimeStep` of 1/240, where `sim_freq=100` gave contact
+substeps 2.4x coarser than the reference.
 
-**Push distance is close to, but deliberately short of, BESO's own proportions.** A Monte Carlo
-check against BESO's actual reset-time formulas gives a mean block→target push distance of
-~0.41m (~10.2x its 4cm cube). The original `CUBE_X_RANGE`/`TARGET_X` here gave only ~4.4-5.7x --
-about half. Stretching the workspace to hit BESO's ~10x ratio was tried and reverted: pushing the
-target region out to where its mean reach-radius sat near this fork's documented Panda annulus
-edge (~0.82m) didn't just lower the success rate, it made *individual* `move_to_pose_with_screw`
-calls balloon into hundreds of waypoints each (episodes ran 4,700-13,300 steps, confirmed via
-`plan_screw`'s own waypoint count) -- reaching near full extension requires a much longer,
-more roundabout joint-space interpolation even when the pose is technically reachable. The current
-ranges land at ~6.4x cube size (`CUBE_X_RANGE=(-0.16,-0.08)`, `TARGET_X=0.13`,
-`TARGET_Y_OFFSET=0.09`) -- meaningfully closer to BESO than the original, chosen to keep both
-robots' mean reach-radius in a comfortable middle zone rather than at either boundary.
+`max_episode_steps=500` is **not** comparable to BESO's `eval_n_steps` of 300. BESO's oracle emits
+one command per control step and pushes continuously; this suite is plan-and-execute, so every
+stroke carries its own accel/decel ramp and the same motion costs more steps. It is headroom rather
+than a budget: the motion planner's worst episode over 30 seeds is 345 steps.
 
 **`evaluate()` matches BESO's own success rule exactly: order-agnostic.** Success holds if either
 valid distinct pairing is reached (A→targetA & B→targetB, OR A→targetB & B→targetA) — mirroring
@@ -539,26 +566,18 @@ at 10Hz control is a full second of standing still roughly every 4cm of travel. 
 "push a little, wait, push again" stutter visible in rendered rollouts, and it is not BESO
 behaviour. It is gone entirely — see the stroke cap below.
 
-**`max_stroke` caps the advance per stroke at 0.20m, and that is what removed the last stuttering
-demos.** A full 0.4m straight-line Cartesian path at push height is often unplannable by
-`plan_screw` from a given configuration: 3 of 49 strokes failed, and each failure used to fall back
-to chunked pushing. Capping the advance keeps every stroke continuous while handing the planner a
-path length it can actually solve — **0 failures in 65 strokes** at 0.20m. The cap must be this
-tight: 0.25m and 0.30m both reintroduce failures.
+**`max_stroke` caps the advance per stroke at 0.20m.** A full-length straight Cartesian path at
+push height is not always plannable by `plan_screw` from a given configuration, and a stroke that
+fails to plan is worse than two that succeed. A capped stroke ends with the TCP exactly at the
+cube's back face on the push line, so the next one starts immediately — no retreat, no re-approach
+— which makes a long push a run of back-to-back continuous strokes with only a settle between them.
 
-A capped stroke ends with the TCP exactly at the cube's back face on the push line, so the next
-stroke starts immediately — no retreat, no re-approach, no backing off by the standoff and running
-up again (`seated` in the pass loop). A long push therefore executes as back-to-back continuous
-strokes with only the settle between them, which is *closer* to BESO's per-control-step
-re-observation than the single open-loop stroke it replaced. It also raises the solver's ceiling:
-27/30 against 26/30 uncapped, given enough steps.
-
-**The chunked fallback was deleted rather than kept as a safety net.** It was worth +4/30 successes
-back when a stroke was the whole push (26/30 with, 22/30 without); with the cap it never fires and
-ablating it changes nothing (23/30 either way). It is not retained, because these trajectories feed
-a diffusion policy and one rare stuttering demo silently contaminates the action distribution — a
-clean failure is dropped by `--only-count-success`, a contaminated success is not. Restore it only
-if yield ever matters more than demo purity.
+**Standing the pusher's own radius off the cube is not optional.** `contact_clearance` is
+`CUBE_HALF_SIZE + PUSHER_RADIUS[robot] - 0.01`, so the pusher's *surface* — not the TCP — ends up
+~5mm past the cube's back face. Using `CUBE_HALF_SIZE` alone parks xarm6's 52mm flange 25mm from the
+cube's centre, i.e. ~45mm inside it, and PhysX resolves that penetration by launching the cube. That
+was the real cause of the cube tumbling previously blamed on pusher shape: measured **7/20 -> 19/20**
+on xarm6 from this one term.
 
 **Five failure modes surfaced empirically, all applying to both arms:**
 - **The wrist riding over the cube instead of pushing it.** mplib's `plan_screw` sometimes returns
@@ -595,12 +614,6 @@ if yield ever matters more than demo purity.
   shortens the free run-up, never the stroke. Zero-length rungs are skipped explicitly — planning to
   the pose the TCP already occupies yields an empty path and the same `follow_path`
   `UnboundLocalError` as `_lift_clear`, reachable on a correction pass where the cube barely moved.
-- **Runaway backwards chase.** If a cube is lost off the pusher and ends up *past* the target,
-  `push_dir` flips and the chunked fallback walks the TCP backwards one `push_step` at a time,
-  shoving the cube further away with every iteration — observed driving a cube a metre off target
-  and the TCP to x=-0.72, off the table, in a single episode. `_push_in_chunks` now bails as soon as
-  an iteration fails to improve on the best distance seen.
-
 **Stop stepping once the episode is over.** `_episode_over` checks the `terminated`/`truncated` flags
 that `follow_path` returns and aborts the remaining passes. Without it the solver kept planning past
 `max_episode_steps` — the `TimeLimit` wrapper stops counting but `env.step` still runs — so runs were
@@ -620,16 +633,16 @@ four goals unreachable for a goal-conditioned policy. `assign_push_pairs` theref
 assignment and the order uniformly, with plain `random.choice`/`random.shuffle` rather than the
 env's seeded RNG — mode selection is deliberately not tied to reproducibility in BESO either.
 
-Verified success rates (`PushBlock-v1`, `sim_backend=cpu`, 10g cube, 0.35m pushes, capped strokes,
-honest step accounting at the registered 500-step limit): **20/20 on panda (20 seeds, mean 195
-steps, max 314), 26/30 on xarm6_nogripper (30 seeds, mean 322 steps, max 536, 1 truncated)**.
+Verified success rates (`PushBlock-v1`, `sim_backend=cpu`, BESO geometry, honest step accounting at
+the registered 500-step limit): **29/30 on xarm6_nogripper** (mean 243 steps, max 345) and
+**18/20 on panda** (mean 254 steps, max 357).
 
-`max_episode_steps` is **500**, not BESO's `eval_n_steps` of 300, and the two are not comparable:
-BESO's oracle emits one velocity command per control step and pushes continuously, whereas this
-suite is plan-and-execute, so every stroke carries its own accel/decel ramp and the same motion
-costs several times the steps. At 350 the limit rather than the solver was the binding constraint on
-xarm6_nogripper — 7 of 30 runs were truncated mid-push and scored as failures, costing three
-genuine successes. 500 clears all but one, with headroom.
+**Transits still lift over cubes rather than routing around them in-plane.** BESO never changes
+effector height, so this is the one remaining out-of-plane content in the demonstrations. It is
+blocked on the thin pusher, not on the routing: with a 52mm flange the clearance needed around a
+cube (~0.080) exceeds half BESO's 0.100 minimum cube separation, so there is physically no planar
+corridor between two cubes. A planar-routing implementation was written and reverted for this
+reason; it becomes straightforward once `PUSHER_RADIUS` drops (berth ~0.042, which fits).
 
 ```bash
 python -m mani_skill.examples.motionplanning.panda.run \

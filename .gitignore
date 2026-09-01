@@ -34,6 +34,7 @@ imgui.ini
 /tmp
 /data
 /demos
+/demos_out
 /videos
 /examples/benchmarking/videos
 

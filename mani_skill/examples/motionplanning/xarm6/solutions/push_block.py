@@ -36,7 +36,12 @@ def solve(env: PushBlockEnv, seed=None, debug=False, vis=False):
             target,
             push_quat,
             push_height=env.CUBE_HALF_SIZE,
-            contact_clearance=env.CUBE_HALF_SIZE,
+            # Stands the pusher's *surface* ~5mm past the cube's back face. Omit the
+            # pusher radius and a 52mm flange is parked inside the cube, and PhysX
+            # resolves that by launching it.
+            contact_clearance=(
+                env.CUBE_HALF_SIZE + env.PUSHER_RADIUS[env.robot_uids] - 0.01
+            ),
             success_radius=env.SUCCESS_RADIUS,
         )
         if res == -1 or bool(res[2]) or bool(res[3]):
