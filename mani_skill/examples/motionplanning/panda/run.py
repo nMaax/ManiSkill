@@ -150,7 +150,7 @@ def parse_args(args=None):
         "--robot_uids",
         default=None,
         type=str,
-        help="Robot to use, choose among panda and panda_wristcam.",
+        help="Robot to use, choose among panda, panda_stick, and panda_wristcam.",
     )
     return parser.parse_args()
 

@@ -5,7 +5,7 @@ import sapien
 import torch
 from transforms3d.euler import euler2quat
 
-from mani_skill.agents.robots import Panda, XArm6NoGripper
+from mani_skill.agents.robots import Panda, PandaStick, XArm6NoGripper
 from mani_skill.envs.sapien_env import BaseEnv
 from mani_skill.envs.utils import randomization
 from mani_skill.sensors.camera import CameraConfig
@@ -68,11 +68,12 @@ class PushBlockEnv(BaseEnv):
       cube ends up in which target does not matter.
     """
 
-    SUPPORTED_ROBOTS = ["xarm6_nogripper", "panda"]
-    agent: Union[XArm6NoGripper, Panda]
+    SUPPORTED_ROBOTS = ["panda_stick", "xarm6_nogripper", "panda"]
+    agent: Union[PandaStick, XArm6NoGripper, Panda]
 
     # per-robot base pose
     _ROBOT_BASE_POSE = {
+        "panda_stick": sapien.Pose(p=[-0.615, 0, 0]),
         "xarm6_nogripper": sapien.Pose(p=[-0.522, 0, 0]),
         "panda": sapien.Pose(p=[-0.615, 0, 0]),
     }
@@ -111,9 +112,10 @@ class PushBlockEnv(BaseEnv):
     CUBE_HALF_DIAGONAL = CUBE_HALF_SIZE * np.sqrt(2)
 
     # How far the pusher's contact surface reaches from the TCP along the push axis,
-    # measured off the collision meshes (xarm6's link6 flange, panda's closed fingers).
+    # measured off the collision meshes (xarm6's link6 flange, panda's closed fingers,
+    # panda_stick's cylindrical stick).
     # Solvers size their contact standoff from this. BESO's pin is 0.001.
-    PUSHER_RADIUS = {"xarm6_nogripper": 0.052, "panda": 0.026}
+    PUSHER_RADIUS = {"panda_stick": 0.008, "xarm6_nogripper": 0.052, "panda": 0.026}
 
     # Where the TCP starts, behind every cube. BESO uses -0.40; a 52mm flange needs more
     # clearance than its 1mm pin or the wrist starts overlapping a cube (6.5% of resets).
@@ -129,6 +131,17 @@ class PushBlockEnv(BaseEnv):
     # TCP at START_TCP_XY, pushing height, wrist down. Solved offline; regenerate if
     # START_TCP_XY moves.
     _START_QPOS = {
+        "panda_stick": np.array(
+            [
+                -0.73018196,
+                0.55598256,
+                -0.11993673,
+                -2.02965624,
+                0.11871456,
+                2.57923081,
+                -0.14735828,
+            ]
+        ),
         "xarm6_nogripper": np.array(
             [-0.98269925, 0.90699818, -1.31737271, 0.00001767, 0.41037425, -0.98271620]
         ),
@@ -151,7 +164,7 @@ class PushBlockEnv(BaseEnv):
     # 0.0, not the usual 0.02: BESO's reset is exact, and at pushing height 0.02rad of
     # joint noise drives the wrist through the table.
     def __init__(
-        self, *args, robot_uids="xarm6_nogripper", robot_init_qpos_noise=0.0, **kwargs
+        self, *args, robot_uids="panda_stick", robot_init_qpos_noise=0.0, **kwargs
     ):
         self.robot_init_qpos_noise = robot_init_qpos_noise
         super().__init__(*args, robot_uids=robot_uids, **kwargs)
@@ -193,12 +206,15 @@ class PushBlockEnv(BaseEnv):
         )
 
     def _pusher_links(self):
-        """The links that contact the cubes: bare wrist on xarm6, closed fingers on panda."""
+        """The links that contact the cubes: bare wrist on xarm6, closed fingers on panda,
+        or the hand link (carrying the stick collision cylinder) on panda_stick."""
         if self.robot_uids == "panda":
             return [
                 self.agent.robot.links_map["panda_leftfinger"],
                 self.agent.robot.links_map["panda_rightfinger"],
             ]
+        elif self.robot_uids == "panda_stick":
+            return [self.agent.robot.links_map["panda_hand"]]
         return [self.agent.tcp]
 
     def _load_agent(self, options: dict):

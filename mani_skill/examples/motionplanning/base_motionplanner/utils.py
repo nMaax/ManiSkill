@@ -1,3 +1,4 @@
+import heapq
 import random
 
 import numpy as np
@@ -284,4 +285,229 @@ def push_object_closed_loop(
     # None only if nothing at all was executed: the first lift was skipped as a no-op and
     # the first approach failed to plan. Report that as a motion-planning failure, which
     # is what callers expect and what it is.
+    return res if res is not None else -1
+
+
+def is_path_clear_2d(p1, p2, obstacles, radius):
+    """Check if the 2D segment p1 -> p2 is at least radius away from all obstacles."""
+    for obs in obstacles:
+        if _point_segment_dist(obs, p1, p2) < radius:
+            return False
+    return True
+
+
+def plan_2d_waypoints(
+    start,
+    goal,
+    obstacles,
+    radius=0.042,
+    x_bounds=(-0.35, 0.05),
+    y_bounds=(-0.45, 0.25),
+):
+    """Plan collision-free 2D waypoints at fixed z from start to goal.
+    Uses disengagement, local visibility graph, and corridor routing."""
+    start = np.asarray(start[:2], dtype=float)
+    goal = np.asarray(goal[:2], dtype=float)
+
+    if is_path_clear_2d(start, goal, obstacles, radius):
+        return [goal]
+
+    # Check if start is currently close to any obstacle (e.g. just pushed it).
+    # If so, disengage first: find direction away from the closest obstacle.
+    disengage_pts = []
+    curr = start.copy()
+    for obs in obstacles:
+        d = float(np.linalg.norm(curr - obs))
+        if d < radius:
+            away = (curr - obs) / (d + 1e-9)
+            step = obs + away * (radius + 0.015)
+            step[0] = np.clip(step[0], x_bounds[0], x_bounds[1])
+            step[1] = np.clip(step[1], y_bounds[0], y_bounds[1])
+            disengage_pts.append(step)
+            curr = step
+            break
+
+    if is_path_clear_2d(curr, goal, obstacles, radius):
+        return disengage_pts + [goal]
+
+    nodes = [curr, goal]
+    angles = np.linspace(0, 2 * np.pi, 12, endpoint=False)
+    for obs in obstacles:
+        for ang in angles:
+            cand = obs + (radius + 0.015) * np.array([np.cos(ang), np.sin(ang)])
+            cand[0] = np.clip(cand[0], x_bounds[0], x_bounds[1])
+            cand[1] = np.clip(cand[1], y_bounds[0], y_bounds[1])
+            if all(np.linalg.norm(cand - o) >= radius for o in obstacles):
+                nodes.append(cand)
+
+    # Corridor waypoints
+    for y in [-0.42, -0.20, 0.0, 0.22]:
+        for x in [x_bounds[0], -0.25, -0.12, 0.0, x_bounds[1]]:
+            cand = np.array([x, y])
+            if all(np.linalg.norm(cand - o) >= radius for o in obstacles):
+                nodes.append(cand)
+
+    n = len(nodes)
+    adj = {i: [] for i in range(n)}
+    for i in range(n):
+        for j in range(i + 1, n):
+            if is_path_clear_2d(nodes[i], nodes[j], obstacles, radius):
+                d = float(np.linalg.norm(nodes[i] - nodes[j]))
+                adj[i].append((j, d))
+                adj[j].append((i, d))
+
+    dist = {i: float("inf") for i in range(n)}
+    parent = {i: None for i in range(n)}
+    dist[0] = 0
+    pq = [(0, 0)]
+    while pq:
+        d, u = heapq.heappop(pq)
+        if u == 1:
+            break
+        if d > dist[u]:
+            continue
+        for v, w in adj[u]:
+            if dist[u] + w < dist[v]:
+                dist[v] = dist[u] + w
+                parent[v] = u
+                heapq.heappush(pq, (dist[v], v))
+
+    if dist[1] == float("inf"):
+        # Fallback: baseline routing
+        p1 = np.array([curr[0], -0.42])
+        p2 = np.array([goal[0], -0.42])
+        return disengage_pts + [p1, p2, goal]
+
+    path = []
+    c = 1
+    while c is not None:
+        path.append(nodes[c])
+        c = parent[c]
+    path.reverse()
+
+    # Shortcut path
+    if len(path) > 2:
+        sc = [path[0]]
+        i = 0
+        while i < len(path) - 1:
+            for j in range(len(path) - 1, i, -1):
+                if is_path_clear_2d(sc[-1], path[j], obstacles, radius):
+                    sc.append(path[j])
+                    i = j
+                    break
+            else:
+                i += 1
+                sc.append(path[i])
+        path = sc
+
+    return disengage_pts + path[1:]
+
+
+def push_object_planar_closed_loop(
+    planner,
+    obj,
+    target,
+    push_quat,
+    push_height,
+    contact_clearance,
+    success_radius,
+    other_obstacles=None,
+    standoff=0.04,
+    success_margin=0.01,
+    max_passes=12,
+    max_stroke=0.15,
+    max_lat_slip=0.022,
+    max_lead_slip=0.005,
+    settle_steps=0,
+    obs_radius=0.042,
+):
+    """Push obj onto target while keeping the TCP strictly at push_height (no lifting in z).
+    Navigates around obstacles in the 2D plane with slip detection to prevent pushing empty air."""
+    if other_obstacles is None:
+        other_obstacles = []
+
+    res = None
+    for pass_idx in range(max_passes):
+        if _episode_over(res):
+            break
+        obj_p = obj.pose.p[0].cpu().numpy()
+        target_p = target.pose.p[0].cpu().numpy()
+        rem = float(np.linalg.norm(target_p[:2] - obj_p[:2]))
+        if rem < success_radius - success_margin:
+            break
+
+        push_dir = _push_dir(obj_p, target_p)
+        contact_xy = obj_p[:2] - push_dir * contact_clearance
+        pre_xy = contact_xy - push_dir * standoff
+        tcp_p = planner.base_env.agent.tcp.pose.sp.p
+
+        # Check relative position along and perpendicular to push_dir
+        rel = tcp_p[:2] - obj_p[:2]
+        proj = float(np.dot(rel, push_dir))
+        perp = rel - proj * push_dir
+        lat = float(np.linalg.norm(perp))
+
+        # Seated if right behind the cube and aligned laterally
+        seated = (
+            -(contact_clearance + 0.015) < proj < -(contact_clearance - 0.010)
+            and lat < 0.018
+            and abs(tcp_p[2] - push_height) < 0.01
+        )
+
+        if not seated:
+            obstacles = [
+                obs.pose.p[0].cpu().numpy()[:2] if hasattr(obs, "pose") else obs[:2]
+                for obs in other_obstacles
+            ]
+            # If moving directly to pre_xy would pass through obj itself, treat obj as obstacle
+            if _point_segment_dist(obj_p[:2], tcp_p[:2], pre_xy) < obs_radius:
+                obstacles.append(obj_p[:2])
+
+            wps = plan_2d_waypoints(tcp_p, pre_xy, obstacles, radius=obs_radius)
+            for wp in wps:
+                wp_pose = sapien.Pose(p=[wp[0], wp[1], push_height], q=push_quat)
+                step_res = planner.move_to_pose_with_screw(wp_pose)
+                if step_res == -1 or _episode_over(step_res):
+                    res = step_res
+                    break
+                res = step_res
+            if _episode_over(res):
+                break
+
+        advance = min(rem, max_stroke)
+        end_xy = (
+            obj_p[:2]
+            + push_dir * advance
+            - push_dir * contact_clearance
+        )
+        end_pose = sapien.Pose(p=[end_xy[0], end_xy[1], push_height], q=push_quat)
+
+        # Plan screw trajectory and execute step-by-step with slip detection
+        plan_res = planner.move_to_pose_with_screw(end_pose, dry_run=True)
+        if plan_res == -1 or plan_res.get("status") != "Success":
+            stroke = planner.move_to_pose_with_screw(end_pose, refine_steps=settle_steps)
+            if stroke == -1 or _episode_over(stroke):
+                res = stroke
+                break
+            res = stroke
+        else:
+            n_step = plan_res["position"].shape[0]
+            for i in range(n_step):
+                action = np.hstack([plan_res["position"][i]])
+                obs, reward, terminated, truncated, info = planner.env.step(action)
+                res = [obs, reward, terminated, truncated, info]
+                if terminated or truncated:
+                    break
+                # Live slip check: terminate early if stick slips off face or leads cube
+                tcp_now = planner.base_env.agent.tcp.pose.sp.p
+                obj_now = obj.pose.p[0].cpu().numpy()
+                rel_now = tcp_now[:2] - obj_now[:2]
+                proj_now = float(np.dot(rel_now, push_dir))
+                perp_now = rel_now - proj_now * push_dir
+                lat_now = float(np.linalg.norm(perp_now))
+                if proj_now > max_lead_slip or lat_now > max_lat_slip:
+                    break
+            if _episode_over(res):
+                break
+
     return res if res is not None else -1

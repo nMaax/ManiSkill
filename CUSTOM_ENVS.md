@@ -10,7 +10,7 @@ All ranges are metres relative to the table centre. The Panda base sits at `x = 
 negative `x` is *closer* to the robot. `+y` is to the robot's left.
 
 **Every environment below defaults to Panda except `PushBlock-v1`, which defaults to
-`xarm6_nogripper`** (BESO's own robot family, and `panda` remains available as an opt-in)
+`panda_stick`** (`xarm6_nogripper` and `panda` remain available as opt-ins)
 — see "How Push Block works" below for why.
 
 | env id | spawn x | spawn y | cube rotation | goal | file |
@@ -276,15 +276,11 @@ it became clear BESO's own environment has no counterpart to it at all — BESO'
 never distinguishes which target a given block is "supposed" to reach (see below), so a
 fixed-pairing variant wasn't reproducing anything from BESO, just adding surface area.
 
-**Robot defaults to `xarm6_nogripper`, BESO's own robot family, not Panda.** BESO's own suction
-cylinder end effector is never activated (it's a rigid, non-actuated attachment, used purely as a
-contact pusher), so `xarm6_nogripper` — the bare-wrist xArm6 variant with no functional gripper at
-all — is the closer match, not `xarm6_robotiq`. `SUPPORTED_ROBOTS = ["xarm6_nogripper", "panda"]`;
-`panda` remains available via `gym.make(..., robot_uids="panda")` for users who want ManiSkill's
-better-supported default arm instead (gripper stays closed the whole episode as a blunt "fist"
-pusher there, since Panda has no bare-wrist option). `_ROBOT_BASE_POSE` supplies `_load_agent`'s
-per-robot base pose (`-0.522` for xarm6, `-0.615` for panda), matching `TableSceneBuilder`'s own
-per-`robot_uids` convention — no other task-side code is robot-specific: `evaluate()`,
+**Robot defaults to `panda_stick`, the Push-T robot equipped with an 8mm cylindrical stick.**
+This closely reproduces BESO's thin contact pin morphology. `xarm6_nogripper` (BESO's arm family
+with bare wrist) and `panda` (closed-fist gripper) remain supported via `robot_uids="xarm6_nogripper"`
+and `robot_uids="panda"`. `_ROBOT_BASE_POSE` supplies `_load_agent`'s per-robot base pose (`-0.615` for
+panda/panda_stick, `-0.522` for xarm6) — no other task-side code is robot-specific: `evaluate()`,
 `_get_obs_extra`, reward shaping, and spawn logic only ever touch `self.agent.tcp.pose`.
 
 **Cube/target spawn identity (which slot each object occupies) matches BESO, and is not tied to a
@@ -634,22 +630,28 @@ assignment and the order uniformly, with plain `random.choice`/`random.shuffle` 
 env's seeded RNG — mode selection is deliberately not tied to reproducibility in BESO either.
 
 Verified success rates (`PushBlock-v1`, `sim_backend=cpu`, BESO geometry, honest step accounting at
-the registered 500-step limit): **29/30 on xarm6_nogripper** (mean 243 steps, max 345) and
-**18/20 on panda** (mean 254 steps, max 357).
+the registered 500-step limit): **30/30 on panda_stick** (mean 224 steps with smooth slip cutoff, down from 268 steps; 100% planar, strictly $z=0.02$m),
+**29/30 on xarm6_nogripper** (mean 243 steps, max 345), and **18/20 on panda** (mean 254 steps, max 357).
 
-**Transits still lift over cubes rather than routing around them in-plane.** BESO never changes
-effector height, so this is the one remaining out-of-plane content in the demonstrations. It is
-blocked on the thin pusher, not on the routing: with a 52mm flange the clearance needed around a
-cube (~0.080) exceeds half BESO's 0.100 minimum cube separation, so there is physically no planar
-corridor between two cubes. A planar-routing implementation was written and reverted for this
-reason; it becomes straightforward once `PUSHER_RADIUS` drops (berth ~0.042, which fits).
+**Planar transits and smooth continuous pushing on `panda_stick`.** While `xarm6_nogripper` (52mm flange) and `panda`
+(closed fingers) lift to `retreat_height = 0.15m` to clear cubes during transit, `panda_stick`'s 8mm
+radius reduces the required clearance to ~0.042m, easily fitting through the $\ge 0.10$m cube gap.
+The `panda_stick` solver uses `push_object_planar_closed_loop`, which navigates around cubes in the
+2D plane and routes via the rear baseline corridor ($y \le -0.42$) without ever leaving $z = 0.02$m.
+Furthermore, the solver features **live slip detection**: during stroke execution, if contact drifts
+laterally past the cube face or the stick starts outrunning the cube, the stroke terminates early immediately,
+preventing the robot from pushing empty air and eliminating long retreat loops around the cube.
+This matches BESO's and Push-T's smooth, controlled planar demonstrations.
 
 ```bash
+# PushBlock-v1 defaults to panda_stick and runs the strictly planar solver:
 python -m mani_skill.examples.motionplanning.panda.run \
     -e PushBlock-v1 -n 100 --only-count-success --save-video
 
-# xarm6_nogripper is PushBlock's default robot, but xarm6/run.py hardcodes xarm6_robotiq for
-# every other env in its MP_SOLUTIONS -- override it explicitly:
+# Opt-in robots:
+python -m mani_skill.examples.motionplanning.panda.run \
+    -e PushBlock-v1 --robot_uids panda -n 100 --only-count-success --save-video
+
 python -m mani_skill.examples.motionplanning.xarm6.run \
     -e PushBlock-v1 --robot_uids xarm6_nogripper -n 100 --only-count-success --save-video
 ```
