@@ -84,10 +84,10 @@ class PushBlockEnv(BaseEnv):
     # BESO's block.urdf uses <contact><inertia_scaling value="3.0"/></contact>, a
     # PyBullet URDF extension that multiplies the block's rotational inertia by 3 while
     # leaving its mass alone
-    CUBE_INERTIA_SCALING = 3.0
-    CUBE_FRICTION = 1.0
+    CUBE_INERTIA_SCALING = 2.0  # BESO default: 3.0
+    CUBE_FRICTION = 0.3  # BESO default: 1.0 (workspace.urdf and block.urdf)
     SUCCESS_RADIUS = 0.05
-    LOCK_Z_ROTATION = False
+    LOCK_Z_ROTATION = False  # BESO default: False
 
     # +Y pushes, X separates the targets -- BESO's own layout, not a transposition of it.
     # BESO's base sits at its frame's origin, so swapping its axis names rotates the task
