@@ -30,6 +30,7 @@ negative `x` is *closer* to the robot. `+y` is to the robot's left.
 | `PlaceCubeRightLockedRotation-v1` | −0.20 … 0.12 | −0.05 … 0.21 | **locked** | A at B −0.16 y | `place_cube_right_locked_rotation.py` |
 | `PlaceSphereRestrictedSpawn-v1` | −0.089 … 0.082 | −0.132 … 0.131 | inherited | sphere in bin | `place_sphere_restricted_spawn.py` |
 | `PushBlock-v1` *(push runs along **y**, not x — see below)* | −0.222 … −0.022 (cubes), −0.122 ± 0.12 (targets) | −0.35 … −0.05 (cubes, shared), 0.20 (targets, near-fixed) | free | push A,B into two **distinct** targets, order-agnostic (matches BESO's own success rule) | `push_block.py` |
+| `PushTwoCubes-v1` *(a PushCube extension, not a PushBlock variant — see below)* | −0.08 … −0.02 (cubes), 0.15 (targets, fixed) | −0.19 … −0.13 (cubeA) / 0.13 … 0.19 (cubeB), ∓0.16 (targets, fixed) | locked (never randomized) | push A into targetA **and** B into targetB, pairing and order both **fixed** | `push_two_cubes.py` |
 
 **There is exactlu one file per registered environment.**, e.g. `PlaceCubeLeftLockedRotation-v1` is in `place_cube_left_locked_rotation.py`.
 
@@ -497,6 +498,44 @@ count as a success. Success therefore also requires cubeB to have moved less tha
 `CUBEB_DISTURB_THRESH = 0.01` m from its spawn. The dense reward is unaffected — `is_placed` stays
 purely geometric.
 
+## How Push Two Cubes works
+
+`push_two_cubes.py`'s `PushTwoCubesEnv` is `PushCube-v1` run twice, side by side. It exists to be a
+deliberately **single-mode** task: the intended use is to train a policy on this one narrow task and
+then probe whether zero-shot capacity can be recovered, so anything that would let a policy learn a
+distribution over solutions has been removed.
+
+| | cubeA | cubeB |
+|---|---|---|
+| colour | blue | green |
+| lane | `y = -0.16` (robot's right) | `y = +0.16` (robot's left) |
+| spawn | `(-0.05, -0.16)` ± 0.03 in x and y | `(-0.05, +0.16)` ± 0.03 in x and y |
+| target | fixed at `(0.15, -0.16)` | fixed at `(0.15, +0.16)` |
+| push order | first | second |
+
+`GOAL_RADIUS = 0.08`, `CUBE_HALF_SIZE = 0.02`, `max_episode_steps = 300`. The push runs along `+x`
+(away from the robot) exactly as in PushCube, with a nominal `0.20 m` stroke — the same distance
+PushCube gets from `0.1 + goal_radius` at its defaults.
+
+What is deliberately *not* randomized, and why:
+
+- **Targets never move.** PushCube places its goal at `cube_xy + [0.1 + goal_radius, 0]`, i.e. the
+  goal follows the cube. Here both goals are at fixed absolute positions and only the cubes jitter.
+- **The pairing is fixed.** `evaluate()` scores cubeA against `goal_regionA` only. Contrast
+  `PushBlock-v1`, which accepts either pairing.
+- **The order is fixed.** The dense reward is staged: `reward = stage(A)`, and only once
+  `is_cubeA_placed` does it become `3.0 + stage(B)`, with `8.0` on success (`stage()` is PushCube's
+  own reward for one cube, in `[0, 3]`). So B is not worth attempting until A is done.
+- **Cube orientation is not randomized** — spawn quaternion is always identity.
+
+The lanes are `0.32` apart against a `2 * GOAL_RADIUS = 0.16` goal diameter, so the goals never
+overlap, a cube can never sit in the wrong goal, and no rejection sampling is needed at spawn. The
+final TCP push pose sits `≈0.70 m` from the Panda base, well inside the ~0.82 m reach arc.
+
+**This does not reuse any PushBlock machinery.** `push_object_closed_loop` and especially
+`assign_push_pairs` in `base_motionplanner/utils.py` sample the pairing and the order at random,
+which is precisely the multimodality this task is built to exclude.
+
 ## Motion planning
 
 Solvers live in `mani_skill/examples/motionplanning/panda/solutions/`, and are mapped to env ids in
@@ -520,6 +559,55 @@ two hardcoded actors — it just indexes `env.pool_objects` with `env.pick_idx[0
 `env.pool_rest_z[pick_idx] + env.pool_rest_z[target_idx]` for the stack height offset instead of
 the fixed `cube_half_size[2] * 2` `stack_cube.py` uses. `get_actor_obb` handles the rest
 generically regardless of which shape got drawn (see the note above).
+
+**`PushTwoCubes-v1` has its own solver, `panda/solutions/push_two_cubes.py`**, which pushes cubeA
+then cubeB — hardcoded, never `assign_push_pairs`. It aims for the goal *centre* rather than just
+somewhere inside the goal, since a sloppy oracle makes for sloppy demonstrations. Four things it
+does that `push_cube.py` does not:
+
+- **The stroke stays at the cube's height.** `push_cube.py` takes its target straight off the goal
+  disc, whose `z` is `1e-3`, so the closed fist scrapes the table and `plan_screw` rejects the
+  motion outright on ~10% of seeds.
+- **Each stroke is aimed along the current cube→goal direction**, not straight down `+x`, so one
+  stroke takes out the cube's lateral spawn offset as well as the distance.
+- **The stroke stops `CONTACT_OFFSET - PUSH_LAG` short of the goal centre.** `CONTACT_OFFSET`
+  (0.0295 m) is the fist-to-cube-centre distance at contact. `PUSH_LAG` (0.0060 m) is a
+  steady-state tracking offset: while the fist presses the cube, the joint controller settles
+  where its torque balances friction rather than on the commanded pose. This is *not* settling
+  lag — `refine_steps` converges to 0.0057 and stops — so the stroke aims through it. Both
+  constants were measured, and both are tight (±0.0006 and ±0.0009 over 30 strokes).
+- **A closed loop re-measures and corrects**, up to `MAX_PUSH_PASSES`. With the two constants
+  above the first stroke normally lands inside `PUSH_TOLERANCE` (5 mm) and the loop exits, so this
+  is a safety net rather than a routine second stroke. It is deterministic given the state — it
+  corrects, it never chooses between alternatives — so it adds precision without adding
+  multimodality.
+
+Two guards keep the loop from being worse than the error it fixes:
+
+- **Do not refine below ~5 mm.** At a 1.5 mm tolerance the corrections become sub-millimetre
+  strokes, which are ill-conditioned: measured over 25 seeds it produced IK failures, 8/25 aborted
+  plans, and a *worse* mean error (10.9 mm) than not refining at all.
+- **Abandon a refinement that would reach too far** (`REFINE_REACH_LIMIT`, 0.76 m). Correcting a
+  stroke that stopped short lines the arm up at most ~0.73 m out. Correcting an *overshoot* means
+  reaching around to the far side of the cube; on one seed that put the target 0.81 m out, near
+  the ~0.82 m limit, where the arm crawled through near-singular configurations (single moves of
+  123 and 319 steps) and shoved the cube further off than it started.
+
+**Every motion is a straight line, and there is no RRTConnect fallback.** A free path may not
+deviate here: a stroke has to push the cube at the goal and not sideways. On one measured seed the
+fallback swept the arm through cubeA and knocked it out of its lane. `plan_screw` does reject the
+occasional straight line it should accept (~1 in 180, and *uncorrelated* with distance from the
+base: failed targets averaged 0.651 m against 0.649 m for successful ones), so `_move` retries it
+as collinear sub-strokes — same path, planned in shorter pieces.
+
+The cross-over between lanes is a lift of `LIFT_HEIGHT`, a translate, and a descent, so the arm
+neither drags the cube it just pushed nor clips the next one. cubeA is approached straight from the
+home pose, where there is nothing to clear.
+
+Measured over 200 seeds: **100% success, 0 failed motion plans**, cube-to-goal-centre error 1.7 mm
+mean / 3.1 mm p95 / 5.6 mm max against an 80 mm goal radius, episode length 216 avg / 261 max
+(hence the 300-step limit). The earlier open-loop version, which reused PushCube's fixed standoff,
+sat at 48 mm mean error.
 
 Note: `figures/custom_envs_spawn_regions.png` has no generator script committed anywhere in this
 repo's history; it is not being regenerated/extended for the clutter variants.
