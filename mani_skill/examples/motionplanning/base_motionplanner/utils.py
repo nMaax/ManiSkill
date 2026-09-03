@@ -403,6 +403,140 @@ def plan_2d_waypoints(
     return disengage_pts + path[1:]
 
 
+def _drive_ee_direct(
+    env,
+    target_xy,
+    height,
+    max_step=0.05,
+    tol=0.003,
+    max_iters=80,
+    live_check=None,
+    action_scale=0.1,
+):
+    """Drive the TCP toward (target_xy, height) with direct pd_ee_delta_pos actions
+    (position-only, root-frame deltas) -- no mplib/IK-path planning. The controller's
+    own per-step IK closes the loop; re-observing the actual TCP pose every iteration
+    is what keeps this from open-loop drifting the way an offline action-conversion
+    would.
+
+    max_step/tol are in metres; action_scale is the controller's pos_upper (panda_stick's
+    pd_ee_delta_pos: 0.1m), since the env's action space is normalized to [-1, 1] over
+    [pos_lower, pos_upper], not raw metres.
+
+    live_check(), if given, is called after every step and may return True to stop the
+    drive early (e.g. slip detected mid-stroke).
+
+    Returns the last [obs, reward, terminated, truncated, info] step result (None if no
+    step was needed).
+    """
+    res = None
+    for _ in range(max_iters):
+        tcp_p = env.unwrapped.agent.tcp.pose.sp.p
+        delta = np.array(
+            [target_xy[0] - tcp_p[0], target_xy[1] - tcp_p[1], height - tcp_p[2]]
+        )
+        if np.linalg.norm(delta[:2]) < tol and abs(delta[2]) < tol:
+            break
+        delta = np.clip(delta, -max_step, max_step)
+        action = np.clip(delta / action_scale, -1, 1)
+        obs, reward, terminated, truncated, info = env.step(action)
+        res = [obs, reward, terminated, truncated, info]
+        if terminated or truncated:
+            break
+        if live_check is not None and live_check():
+            break
+    return res
+
+
+def push_object_planar_closed_loop_direct(
+    env,
+    obj,
+    target,
+    push_height,
+    contact_clearance,
+    success_radius,
+    other_obstacles=None,
+    standoff=0.04,
+    success_margin=0.01,
+    max_steps=350,
+    obs_radius=0.042,
+    nav_step=0.045,
+    push_step=0.05,
+    push_lead=0.012,
+    action_scale=0.1,
+):
+    """Push obj onto target with direct, per-control-tick pd_ee_delta_pos actions:
+    no mplib, no precomputed path. Every single step re-reads obj's live pose and
+    re-aims at it (contact_xy = just behind wherever the cube actually is right now,
+    projected toward target), so lateral drift from an off-centre/rotated push -- which
+    is real, physical, and grows with distance travelled regardless of step size --
+    gets corrected every tick instead of accumulating over a long committed stroke
+    before a slip check can catch it.
+
+    Meant for generating demos NATIVELY in pd_ee_delta_pos, so the recorded actions are
+    real for that control mode and no lossy pd_joint_pos -> pd_ee_delta_pos replay
+    conversion is needed afterwards. No push_quat argument: pd_ee_delta_pos is
+    position-only, so orientation is never actuated -- the wrist stays wherever the
+    reset pose left it.
+    """
+    if other_obstacles is None:
+        other_obstacles = []
+
+    res = None
+    for _ in range(max_steps):
+        if _episode_over(res):
+            break
+        obj_p = obj.pose.p[0].cpu().numpy()
+        target_p = target.pose.p[0].cpu().numpy()
+        rem = float(np.linalg.norm(target_p[:2] - obj_p[:2]))
+        if rem < success_radius - success_margin:
+            break
+
+        push_dir = _push_dir(obj_p, target_p)
+        contact_xy = obj_p[:2] - push_dir * contact_clearance
+        pre_xy = contact_xy - push_dir * standoff
+        tcp_p = env.unwrapped.agent.tcp.pose.sp.p
+
+        # aim_xy is always the live contact point behind the cube -- as the cube gets
+        # pushed, contact_xy moves with it, which is what turns "track this point" into
+        # a continuous push. The only reason to divert is the OTHER cube blocking the
+        # straight line there; obj itself is deliberately excluded from that check
+        # since contact_xy sits right against it by construction.
+        obstacles = [
+            obs.pose.p[0].cpu().numpy()[:2] if hasattr(obs, "pose") else obs[:2]
+            for obs in other_obstacles
+        ]
+        if obstacles and not is_path_clear_2d(
+            tcp_p[:2], contact_xy, obstacles, obs_radius
+        ):
+            wps = plan_2d_waypoints(tcp_p, pre_xy, obstacles, radius=obs_radius)
+            aim_xy, step = wps[0], nav_step
+        else:
+            dist_to_contact = float(np.linalg.norm(contact_xy - tcp_p[:2]))
+            if dist_to_contact < 0.03:
+                # In/entering contact: aim past the cube's current back face, not AT
+                # it. Aiming exactly at contact_xy once already touching commands a
+                # ~zero delta every tick (TCP is already there) -- no forward pressure,
+                # so the cube only creeps from IK/contact slack. push_lead keeps a
+                # standing forward setpoint while still re-deriving push_dir/contact_xy
+                # from the live cube pose every tick, so it stays self-correcting.
+                aim_xy = contact_xy + push_dir * push_lead
+                step = push_step
+            else:
+                aim_xy = contact_xy
+                step = nav_step
+
+        delta = np.array(
+            [aim_xy[0] - tcp_p[0], aim_xy[1] - tcp_p[1], push_height - tcp_p[2]]
+        )
+        delta = np.clip(delta, -step, step)
+        action = np.clip(delta / action_scale, -1, 1)
+        obs, reward, terminated, truncated, info = env.step(action)
+        res = [obs, reward, terminated, truncated, info]
+
+    return res if res is not None else -1
+
+
 def push_object_planar_closed_loop(
     planner,
     obj,

@@ -152,6 +152,16 @@ def parse_args(args=None):
         type=str,
         help="Robot to use, choose among panda, panda_stick, and panda_wristcam.",
     )
+    parser.add_argument(
+        "-c",
+        "--control-mode",
+        default="pd_joint_pos",
+        type=str,
+        help="Control mode to generate the env in. Almost every solution requires "
+        "'pd_joint_pos' (or 'pd_joint_pos_vel') since they plan with mplib, which only "
+        "outputs joint-space paths. Only change this if the solver you're running has "
+        "an explicit non-joint-space code path (check its solve() function).",
+    )
     return parser.parse_args()
 
 
@@ -159,7 +169,7 @@ def _main(args, proc_id: int = 0, start_seed: int = 0) -> str:
     env_id = args.env_id
     env_kwargs = dict(
         obs_mode=args.obs_mode,
-        control_mode="pd_joint_pos",
+        control_mode=args.control_mode,
         render_mode=args.render_mode,
         sensor_configs=dict(shader_pack=args.shader),
         human_render_camera_configs=dict(shader_pack=args.shader),
