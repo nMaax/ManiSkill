@@ -454,6 +454,16 @@ class RecordEpisode(gym.Wrapper):
                     )
                 if self._trajectory_buffer.fail is not None:
                     recursive_replace(self._trajectory_buffer.fail, first_step.fail)
+
+                # A reset starts a new episode for env_idx, so that episode must begin at the
+                # row we just overwrote with the reset observation. Without this the pointer
+                # still points at wherever the env's previous episode was flushed, and every
+                # row recorded in between -- e.g. the zero-action padding that
+                # replay_parallelized_sim keeps stepping after an env has already flushed --
+                # gets prepended to the next episode, with a state discontinuity at the join.
+                self._trajectory_buffer.env_episode_ptr[env_idx] = (
+                    len(self._trajectory_buffer.done) - 1
+                )
         if options is not None and "env_idx" in options:
             options["env_idx"] = common.to_numpy(options["env_idx"])
         self.last_reset_kwargs = copy.deepcopy(dict(options=options, **kwargs))
