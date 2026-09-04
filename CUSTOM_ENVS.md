@@ -500,6 +500,89 @@ purely geometric.
 
 ## How Push Two Cubes works
 
+### The gripper starts closed (and why that matters for the demos)
+
+`TableSceneBuilder.initialize` unconditionally resets the Panda's fingers to `0.04` (open), and
+the push solvers open with `planner.close_gripper()`, which steps the env 6 times commanding the
+*current* arm qpos -- only the fingers move, the arm is pinned. Those 6 steps get recorded, so
+every demo used to start with 8 frames of no TCP motion (6 pinned + ~2 of trapezoidal velocity
+ramp), measured at exactly 8/8/8 across all 1488 trajectories of the first dataset.
+
+That is not just wasted frames. Once the fingers settle at ~step 4 the observation stops changing
+entirely -- frames 4..7 were bit-identical apart from float noise -- while the recorded action is
+zero at 4,5,6 and non-zero at 7. A distributional policy (BESO, diffusion) sees the same
+observation labelled both "hold" and "go", so `p(a | o_0)` keeps a large spike at zero. `o_0` is
+exactly the state the policy is rolled out from, and holding still does not change it, so the
+zero mode is absorbing and the episode can stall before it starts.
+
+The fix is on the env side, not the solver side: `_initialize_episode` closes the fingers right
+after `table_scene.initialize` and calls `self.agent.reset(qpos)` (which also zeroes qvel), and
+the solver just latches `planner.gripper_state = planner.CLOSED` without stepping. Pushing never
+needs an open gripper, so nothing is lost. Doing it in the env keeps train and rollout initial
+states identical -- cropping the prefix out of the dataset alone would not, since the env would
+still reset with the gripper open.
+
+Measured before -> after, same seeds, CPU replay only:
+
+| | dead prefix (min/med/max) | zero-action | episode length (med/max) | success |
+|---|---|---|---|---|
+| before | 8 / 8 / 8 | 3.25% | 216 / 261 | 100% |
+| after | 2 / 2 / 2 | 0.48% | 208 / 223 | 100% |
+
+The 2 remaining frames are the velocity ramp of the first screw plan; their actions ramp
+(5e-3, 2e-2, 4e-2, ...) rather than sitting at zero, and no two consecutive observations are
+identical. Mid-episode there are still short ramps at each waypoint (longest run 6 steps, median
+2) for the same reason -- benign, and not zero-action.
+
+**Any dataset generated before this change has the 8-frame prefix and should be regenerated.**
+
+### Separate bug: the GPU replay leaked padding between episodes (fixed in record.py)
+
+`replay_parallelized_sim` pads every episode in a batch with `np.zeros` actions up to
+`episode_batch_max_len` (replay_trajectory.py:168-175), but flushes each env at its *own*
+`episode_lens - 1` (line 229) while the batch keeps stepping to the batch max. The post-flush
+zero-action steps keep being recorded -- into that env's *next* buffer. The following batch's
+`reset` + `set_state_dict` then snaps the arm to the true start, so each recorded episode is the
+real episode with the previous one's dead tail prepended and a ~230 mm TCP discontinuity at the
+join.
+
+Verified on the first PushTwoCubes dataset: **94.1%** of 1488 episodes carry exactly one
+>50 mm jump (median 231.6 mm), and `(teleport_index + 1) == (recorded length - source length)`
+in **100%** of affected episodes. Re-replaying the same source at `-n 24` instead of `-n 60`
+reproduces it identically (93.8%, 231.5 mm), so batch *size* is irrelevant -- any run with more
+than one batch is affected. Episode ids are permuted relative to the source (97.8%) because
+flush order follows episode length, so compare across files by `episode_seed`, never by id.
+
+This is upstream and independent of the gripper fix above; the env change does **not** address
+it. PushTwoCubes is hit hard only because its episode lengths vary a lot (208-261) within a
+batch.
+
+The root cause is in `RecordEpisode.reset` (`mani_skill/utils/wrappers/record.py`), not in
+`replay_parallelized_sim`. A reset overwrites the last buffer row with the new reset observation
+but left `env_episode_ptr` pointing at wherever that env's *previous* episode was flushed, so the
+next episode was recorded starting from the stale pointer and swallowed every row written in
+between. The fix is to re-point `env_episode_ptr[env_idx]` at the reset row:
+
+```python
+self._trajectory_buffer.env_episode_ptr[env_idx] = (
+    len(self._trajectory_buffer.done) - 1
+)
+```
+
+Fixing it in the recorder rather than in the replay script covers any caller that steps a batched
+env past an individual env's flush, not just this one.
+
+Verified on 24 episodes replayed at `-n 8` (3 batches): 14/24 teleports and up to +23 frames of
+inflation before, **0/24 teleports and 0 inflation after**, with the GPU episodes now matching
+their CPU source unshifted (mean TCP deviation 0.0073 m, pure GPU/CPU physics divergence) and
+identical in length. `-n 1` was always clean, because with one env per batch no padding is ever
+appended -- but it is ~30x slower than the CPU replay and not worth using as a workaround.
+
+Note also that GPU replay cannot change control mode (`NotImplementedError`), so it must consume
+the already-converted `...pd_ee_delta_pos.physx_cpu.h5`, not the raw `pd_joint_pos` file.
+
+
+
 `push_two_cubes.py`'s `PushTwoCubesEnv` is `PushCube-v1` run twice, side by side. It exists to be a
 deliberately **single-mode** task: the intended use is to train a policy on this one narrow task and
 then probe whether zero-shot capacity can be recovered, so anything that would let a policy learn a

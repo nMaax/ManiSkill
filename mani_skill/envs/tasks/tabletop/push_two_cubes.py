@@ -156,6 +156,16 @@ class PushTwoCubesEnv(BaseEnv):
             b = len(env_idx)
             self.table_scene.initialize(env_idx)
 
+            # Start with the fist already closed. TableSceneBuilder always resets the gripper to
+            # 0.04 (open), which forces the motion planner to spend 6 recorded steps closing it
+            # with the arm pinned. Those 6 frames carry a zero action on an observation that is
+            # identical to the frame where motion actually starts, which hands a distributional
+            # policy an absorbing "stand still" mode at exactly the state it is rolled out from.
+            # Pushing never needs an open gripper, so start closed and never record them.
+            qpos = self.agent.robot.get_qpos()
+            qpos[..., -2:] = 0.0
+            self.agent.reset(qpos)
+
             for cube, lane_y in ((self.cubeA, -self.LANE_Y), (self.cubeB, self.LANE_Y)):
                 xyz = torch.zeros((b, 3))
                 jitter = (torch.rand((b, 2)) * 2 - 1) * self.SPAWN_JITTER

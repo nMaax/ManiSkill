@@ -169,7 +169,10 @@ def solve(env: PushTwoCubesEnv, seed=None, debug=False, vis=False):
     )
 
     env = env.unwrapped
-    planner.close_gripper()
+    # The env already resets with the fingers closed, so only latch the state the follow_path
+    # actions carry -- calling close_gripper() here would step the env 6 times with the arm
+    # pinned and write 6 dead zero-action frames into every demo.
+    planner.gripper_state = planner.CLOSED
 
     # cubeA (robot's right) first, then cubeB (robot's left) -- always this order
     # cubeA is approached straight from the home pose with nothing to clear; everything after
