@@ -13,6 +13,7 @@ from mani_skill.examples.motionplanning.panda.solutions import (
     solvePushBlock,
     solvePushCube,
     solvePushTwoCubes,
+    solvePushTwoCubesMultimodal,
     solvePickCube,
     solveStackCube,
     solveStackCubeSwapped,
@@ -57,6 +58,8 @@ MP_SOLUTIONS = {
     # PushTwoCubes-v1 is single-mode by design: the solver always pushes cubeA then cubeB,
     # and never uses the order-randomising helpers PushBlock relies on
     "PushTwoCubes-v1": solvePushTwoCubes,
+    # PushTwoCubesMultimodal-v1 supports 4 modalities (straight vs criss-cross matching, start A vs B)
+    "PushTwoCubesMultimodal-v1": solvePushTwoCubesMultimodal,
     # StackCubeClutter-v1 still stacks cubeA on cubeB, just with extra distractors on the
     # table, so it reuses solveStackCube unchanged
     "StackCubeClutter-v1": solveStackCube,

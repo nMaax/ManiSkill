@@ -31,6 +31,7 @@ negative `x` is *closer* to the robot. `+y` is to the robot's left.
 | `PlaceSphereRestrictedSpawn-v1` | −0.089 … 0.082 | −0.132 … 0.131 | inherited | sphere in bin | `place_sphere_restricted_spawn.py` |
 | `PushBlock-v1` *(push runs along **y**, not x — see below)* | −0.222 … −0.022 (cubes), −0.122 ± 0.12 (targets) | −0.35 … −0.05 (cubes, shared), 0.20 (targets, near-fixed) | free | push A,B into two **distinct** targets, order-agnostic (matches BESO's own success rule) | `push_block.py` |
 | `PushTwoCubes-v1` *(a PushCube extension, not a PushBlock variant — see below)* | −0.08 … −0.02 (cubes), 0.15 (targets, fixed) | −0.19 … −0.13 (cubeA) / 0.13 … 0.19 (cubeB), ∓0.16 (targets, fixed) | locked (never randomized) | push A into targetA **and** B into targetB, pairing and order both **fixed** | `push_two_cubes.py` |
+| `PushTwoCubesMultimodal-v1` | −0.08 … −0.02 (cubes), 0.15 (targets, fixed) | −0.19 … −0.13 (cubeA) / 0.13 … 0.19 (cubeB), ∓0.16 (targets, fixed) | unlocked (random yaw) | 4 modalities (straight vs criss-cross matching, start A vs B) | `push_two_cubes_multimodal.py` |
 
 **There is exactlu one file per registered environment.**, e.g. `PlaceCubeLeftLockedRotation-v1` is in `place_cube_left_locked_rotation.py`.
 
@@ -618,6 +619,30 @@ final TCP push pose sits `≈0.70 m` from the Panda base, well inside the ~0.82 
 **This does not reuse any PushBlock machinery.** `push_object_closed_loop` and especially
 `assign_push_pairs` in `base_motionplanner/utils.py` sample the pairing and the order at random,
 which is precisely the multimodality this task is built to exclude.
+
+### PushTwoCubesMultimodal-v1
+
+`push_two_cubes_multimodal.py`'s `PushTwoCubesMultimodalEnv` extends `PushTwoCubesEnv` to re-introduce
+controlled multimodality into demonstration generation and policy evaluation without relying on any
+PushBlock code.
+
+Four modalities are balanced across episodes (~25% data each):
+- **Mode 0**: Straight matching (A $\to$ goalA, B $\to$ goalB), starting with cubeA (100% vanilla PushTwoCubes).
+- **Mode 1**: Straight matching (A $\to$ goalA, B $\to$ goalB), starting with cubeB.
+- **Mode 2**: Criss-cross matching (A $\to$ goalB, B $\to$ goalA), starting with cubeA.
+- **Mode 3**: Criss-cross matching (A $\to$ goalB, B $\to$ goalA), starting with cubeB.
+
+Key differences from `PushTwoCubes-v1`:
+- **Cube Spawn Rotation**: Cubes spawn with unlocked z-rotation (`random_quaternions(b, lock_x=True, lock_y=True)`) introducing arbitrary initial yaw.
+- **Success condition**: `evaluate()` marks success if either distinct pairing is achieved (straight or criss-cross).
+- **Dense reward**: Generalizes the standoff and staging to any push direction vector, rewarding whichever mode the agent pursues via `torch.maximum(reward_straight, reward_cross)`.
+- **Horizon**: `max_episode_steps = 750` (up from 300) to give headroom for diagonal pushes (~0.38 m travel vs 0.20 m).
+- **Solver**: `solutions/push_two_cubes_multimodal.py` upgrades `push_two_cubes.py`:
+  1. **Lift-and-descend approach**: Always approaches with `lift=True` (transit at high $z$, vertical descent behind cube), preventing the end-effector from dragging or pressing across the cube's top surface.
+  2. **Tilt-compensated lateral offset**: Evaluates the cube face tilt angle $\phi \in [-\pi/4, \pi/4]$ relative to the push direction, shifting the contact point laterally by $\Delta_{\text{lat}} = \text{clip}(k_{\text{tilt}} \sin \phi, -1\,\text{cm}, 1\,\text{cm})$ along $\mathbf{d}_{\text{perp}}$ to produce restoring torque and keep the cube balanced during the push.
+  3. **Live slip and early-goal cutoff**: Inspects relative TCP and cube displacements on every step, immediately cutting the stroke if the cube slips off or reaches the goal region, eliminating laggy overshoots.
+  4. **Collinear subdivision fallback**: Automatically retries using subdivided waypoints (`_move`) if direct Cartesian screw planning fails.
+
 
 ## Motion planning
 
