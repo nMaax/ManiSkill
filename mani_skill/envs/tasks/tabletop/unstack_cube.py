@@ -31,6 +31,8 @@ class UnstackCubeEnv(BaseEnv):
     - the red cube is sufficiently far away from the green cube in the xy plane
     - the red cube is static
     - the red cube is not being grasped by the robot (robot must let go of the cube)
+    - the green cube is never grasped, and only drifts a little (small incidental
+      bumps are tolerated, but it must not be picked up or shoved/dragged around)
     """
 
     SUPPORTED_ROBOTS = ["panda_wristcam", "panda", "fetch"]
@@ -41,8 +43,8 @@ class UnstackCubeEnv(BaseEnv):
     SEPARATION_RADIUS = 0.08
     # if True, the stack's z-axis rotation is fixed (identity) instead of randomized
     LOCK_Z_ROTATION = False
-    # cubeB must not drift further than this (in xy) from where it started
-    CUBEB_DISTURB_THRESH = 0.01
+    # cubeB must not drift further than this (in xy) from where it started, unless grasped
+    CUBEB_DISTURB_THRESH = 0.04
 
     def __init__(
         self, *args, robot_uids="panda_wristcam", robot_init_qpos_noise=0.02, **kwargs
@@ -84,6 +86,9 @@ class UnstackCubeEnv(BaseEnv):
             initial_pose=sapien.Pose(p=[1, 0, 0.1]),
         )
         self.cubeB_init_p = torch.zeros((self.num_envs, 3), device=self.device)
+        self.cubeB_ever_grasped = torch.zeros(
+            self.num_envs, dtype=torch.bool, device=self.device
+        )
 
     def _initialize_episode(self, env_idx: torch.Tensor, options: dict):
         with torch.device(self.device):
@@ -112,6 +117,7 @@ class UnstackCubeEnv(BaseEnv):
             self.cubeA.set_pose(Pose.create_from_pq(p=xyz_A, q=qs))
 
             self.cubeB_init_p[env_idx] = self.cubeB.pose.p[env_idx]
+            self.cubeB_ever_grasped[env_idx] = False
 
     def evaluate(self):
         pos_A = self.cubeA.pose.p
@@ -125,8 +131,13 @@ class UnstackCubeEnv(BaseEnv):
         )
         is_cubeA_static = self.cubeA.is_static(lin_thresh=1e-2, ang_thresh=0.5)
         is_cubeA_grasped = self.agent.is_grasping(self.cubeA)
+        is_cubeB_grasped = self.agent.is_grasping(self.cubeB)
+        # latch: once grasped, cubeB stays "ever grasped" for the rest of the episode,
+        # even if the robot releases it again before evaluate() is next called
+        self.cubeB_ever_grasped |= is_cubeB_grasped
 
-        # cubeB must be left (almost) undisturbed: only cubeA should move
+        # cubeB must never be grasped (e.g. picked up together with cubeA), and can
+        # only drift a little (incidental bumps), not be shoved/dragged around
         cubeB_disturbance = torch.linalg.norm(
             pos_B[:, :2] - self.cubeB_init_p[:, :2], axis=1
         )
@@ -137,10 +148,13 @@ class UnstackCubeEnv(BaseEnv):
             * is_cubeA_on_table
             * is_cubeA_static
             * (~is_cubeA_grasped)
+            * (~self.cubeB_ever_grasped)
             * (~is_cubeB_disturbed)
         )
         return {
             "is_cubeA_grasped": is_cubeA_grasped,
+            "is_cubeB_grasped": is_cubeB_grasped,
+            "is_cubeB_ever_grasped": self.cubeB_ever_grasped.clone(),
             "is_cubeA_far_from_cubeB": is_cubeA_far_from_cubeB,
             "is_cubeA_on_table": is_cubeA_on_table,
             "is_cubeA_static": is_cubeA_static,
@@ -198,6 +212,8 @@ class UnstackCubeEnv(BaseEnv):
 
         # penalize disturbing cubeB, regardless of stage
         reward = reward - torch.tanh(10.0 * info["cubeB_disturbance"])
+        # heavily penalize grasping cubeB at all (e.g. picking up both cubes together)
+        reward[info["is_cubeB_grasped"]] = -1.0
         reward[info["success"]] = 8
 
         return reward
