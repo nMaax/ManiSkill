@@ -41,6 +41,8 @@ class UnstackCubeEnv(BaseEnv):
     SEPARATION_RADIUS = 0.08
     # if True, the stack's z-axis rotation is fixed (identity) instead of randomized
     LOCK_Z_ROTATION = False
+    # cubeB must not drift further than this (in xy) from where it started
+    CUBEB_DISTURB_THRESH = 0.01
 
     def __init__(
         self, *args, robot_uids="panda_wristcam", robot_init_qpos_noise=0.02, **kwargs
@@ -81,6 +83,7 @@ class UnstackCubeEnv(BaseEnv):
             name="cubeB",
             initial_pose=sapien.Pose(p=[1, 0, 0.1]),
         )
+        self.cubeB_init_p = torch.zeros((self.num_envs, 3), device=self.device)
 
     def _initialize_episode(self, env_idx: torch.Tensor, options: dict):
         with torch.device(self.device):
@@ -108,6 +111,8 @@ class UnstackCubeEnv(BaseEnv):
             xyz_A[:, 2] = self.CUBE_HALF_SIZE * 3
             self.cubeA.set_pose(Pose.create_from_pq(p=xyz_A, q=qs))
 
+            self.cubeB_init_p[env_idx] = self.cubeB.pose.p[env_idx]
+
     def evaluate(self):
         pos_A = self.cubeA.pose.p
         pos_B = self.cubeB.pose.p
@@ -120,17 +125,27 @@ class UnstackCubeEnv(BaseEnv):
         )
         is_cubeA_static = self.cubeA.is_static(lin_thresh=1e-2, ang_thresh=0.5)
         is_cubeA_grasped = self.agent.is_grasping(self.cubeA)
+
+        # cubeB must be left (almost) undisturbed: only cubeA should move
+        cubeB_disturbance = torch.linalg.norm(
+            pos_B[:, :2] - self.cubeB_init_p[:, :2], axis=1
+        )
+        is_cubeB_disturbed = cubeB_disturbance > self.CUBEB_DISTURB_THRESH
+
         success = (
             is_cubeA_far_from_cubeB
             * is_cubeA_on_table
             * is_cubeA_static
             * (~is_cubeA_grasped)
+            * (~is_cubeB_disturbed)
         )
         return {
             "is_cubeA_grasped": is_cubeA_grasped,
             "is_cubeA_far_from_cubeB": is_cubeA_far_from_cubeB,
             "is_cubeA_on_table": is_cubeA_on_table,
             "is_cubeA_static": is_cubeA_static,
+            "cubeB_disturbance": cubeB_disturbance,
+            "is_cubeB_disturbed": is_cubeB_disturbed,
             "success": success.bool(),
         }
 
@@ -179,6 +194,10 @@ class UnstackCubeEnv(BaseEnv):
             6 + (ungrasp_reward + static_reward) / 2.0
         )[is_cubeA_placed]
 
+        reward[info["success"]] = 8
+
+        # penalize disturbing cubeB, regardless of stage
+        reward = reward - torch.tanh(10.0 * info["cubeB_disturbance"])
         reward[info["success"]] = 8
 
         return reward
