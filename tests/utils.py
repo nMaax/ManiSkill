@@ -17,6 +17,7 @@ STATIONARY_ENV_IDS = [
     "PegInsertionSide-v1",
     "PushBlock-v1",
     "PushTwoCubes-v1",
+    "PushCubeHard-v1",
 ]
 
 REWARD_MODES = ["dense", "normalized_dense", "sparse"]

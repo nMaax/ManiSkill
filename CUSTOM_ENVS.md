@@ -32,6 +32,7 @@ negative `x` is *closer* to the robot. `+y` is to the robot's left.
 | `PushBlock-v1` *(push runs along **y**, not x — see below)* | −0.222 … −0.022 (cubes), −0.122 ± 0.12 (targets) | −0.35 … −0.05 (cubes, shared), 0.20 (targets, near-fixed) | free | push A,B into two **distinct** targets, order-agnostic (matches BESO's own success rule) | `push_block.py` |
 | `PushTwoCubes-v1` *(a PushCube extension, not a PushBlock variant — see below)* | −0.08 … −0.02 (cubes), 0.15 (targets, fixed) | −0.19 … −0.13 (cubeA) / 0.13 … 0.19 (cubeB), ∓0.16 (targets, fixed) | locked (never randomized) | push A into targetA **and** B into targetB, pairing and order both **fixed** | `push_two_cubes.py` |
 | `PushTwoCubesMultimodal-v1` | −0.08 … −0.02 (cubes), 0.15 (targets, fixed) | −0.19 … −0.13 (cubeA) / 0.13 … 0.19 (cubeB), ∓0.16 (targets, fixed) | unlocked (random yaw) | 4 modalities (straight vs criss-cross matching, start A vs B) | `push_two_cubes_multimodal.py` |
+| `PushCubeHard-v1` | −0.15 … 0.00 | −0.12 … 0.12 | **unlocked** (random yaw) | push cube into fixed goal at `(0.15, 0.0)` | `push_cube_hard.py` |
 
 **There is exactlu one file per registered environment.**, e.g. `PlaceCubeLeftLockedRotation-v1` is in `place_cube_left_locked_rotation.py`.
 
@@ -642,6 +643,22 @@ Key differences from `PushTwoCubes-v1`:
   2. **Tilt-compensated lateral offset**: Evaluates the cube face tilt angle $\phi \in [-\pi/4, \pi/4]$ relative to the push direction, shifting the contact point laterally by $\Delta_{\text{lat}} = \text{clip}(k_{\text{tilt}} \sin \phi, -1\,\text{cm}, 1\,\text{cm})$ along $\mathbf{d}_{\text{perp}}$ to produce restoring torque and keep the cube balanced during the push.
   3. **Live slip and early-goal cutoff**: Inspects relative TCP and cube displacements on every step, immediately cutting the stroke if the cube slips off or reaches the goal region, eliminating laggy overshoots.
   4. **Collinear subdivision fallback**: Automatically retries using subdivided waypoints (`_move`) if direct Cartesian screw planning fails.
+
+### PushCubeHard-v1
+
+`push_cube_hard.py`'s `PushCubeHardEnv` is a hardened single-cube extension of `PushCube-v1`.
+
+In `PushCube-v1`, the cube spawns flat with fixed yaw ($q = [1, 0, 0, 0]$), the target moves relative to the cube, and the solver descends diagonally, often pressing the closed fingertips on the cube's top face. `PushCubeHard-v1` hardens the task:
+- **Uniform spawn area**: `x ∈ [-0.15, 0.00]`, `y ∈ [-0.12, 0.12]`.
+- **Unlocked yaw rotation**: `randomization.random_quaternions(b, lock_x=True, lock_y=True, lock_z=False)` yields arbitrary initial yaw $\theta \in [-\pi, \pi]$.
+- **Fixed target**: Goal zone fixed at `(0.15, 0.0)` on the table (`GOAL_RADIUS = 0.08`), inducing push angles up to $\pm 38^\circ$.
+- **Pre-closed gripper**: Fingers initialize closed (`0.0`) on episode reset to prevent dead demo frames.
+- **Side-pushing solver**: `solutions/push_cube_hard.py`:
+  1. Approaches strictly via high-$z$ transit and vertical descent (`lift=True`), never touching the top face.
+  2. Nudges strictly from the side at `push_z = CUBE_HALF_SIZE` ($0.02\,\text{m}$).
+  3. Uses tilt-angle detection and perpendicular offset to compensate face tilt and maintain cube alignment.
+  4. Monitors live slip and early goal arrival to cut strokes cleanly without overshoot.
+  5. Multi-pass refinement loop corrects any residual displacement.
 
 
 ## Motion planning

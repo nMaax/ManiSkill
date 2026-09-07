@@ -12,6 +12,7 @@ from mani_skill.trajectory.merge_trajectory import merge_trajectories
 from mani_skill.examples.motionplanning.panda.solutions import (
     solvePushBlock,
     solvePushCube,
+    solvePushCubeHard,
     solvePushTwoCubes,
     solvePushTwoCubesMultimodal,
     solvePickCube,
@@ -38,6 +39,7 @@ MP_SOLUTIONS = {
     "PlugCharger-v1": solvePlugCharger,
     "PlaceSphere-v1": solvePlaceSphere,
     "PushCube-v1": solvePushCube,
+    "PushCubeHard-v1": solvePushCubeHard,
     "PullCubeTool-v1": solvePullCubeTool,
     "LiftPegUpright-v1": solveLiftPegUpright,
     "PullCube-v1": solvePullCube,

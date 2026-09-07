@@ -8,6 +8,7 @@ from .plug_charger import PlugChargerEnv
 from .pull_cube import PullCubeEnv
 from .push_block import PushBlockEnv
 from .push_cube import PushCubeEnv
+from .push_cube_hard import PushCubeHardEnv
 from .push_two_cubes import PushTwoCubesEnv
 from .push_two_cubes_multimodal import PushTwoCubesMultimodalEnv
 from .stack_cube import StackCubeEnv
