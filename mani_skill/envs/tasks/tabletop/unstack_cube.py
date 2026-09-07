@@ -39,6 +39,8 @@ class UnstackCubeEnv(BaseEnv):
     CUBE_HALF_SIZE = 0.02
     # minimum center-to-center xy distance between the cubes to count as "unstacked"
     SEPARATION_RADIUS = 0.08
+    # if True, the stack's z-axis rotation is fixed (identity) instead of randomized
+    LOCK_Z_ROTATION = False
 
     def __init__(
         self, *args, robot_uids="panda_wristcam", robot_init_qpos_noise=0.02, **kwargs
@@ -91,7 +93,7 @@ class UnstackCubeEnv(BaseEnv):
                 b,
                 lock_x=True,
                 lock_y=True,
-                lock_z=False,
+                lock_z=self.LOCK_Z_ROTATION,
             )
 
             # cubeB is the bottom cube, resting on the table
