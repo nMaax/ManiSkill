@@ -30,6 +30,7 @@ from .stack_cube_locked_rotation import StackCubeLockedRotationEnv
 from .stack_cube_swapped_locked_rotation import StackCubeSwappedLockedRotationEnv
 from .stack_cube_restricted_spawn import StackCubeRestrictedSpawnEnv
 from .turn_faucet import TurnFaucetEnv
+from .unstack_cube import UnstackCubeEnv
 from .two_robot_pick_cube import TwoRobotPickCube
 from .two_robot_stack_cube import TwoRobotStackCube
 from .poke_cube import PokeCubeEnv
