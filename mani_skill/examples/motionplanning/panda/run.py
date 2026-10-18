@@ -10,11 +10,7 @@ import os.path as osp
 from mani_skill.utils.wrappers.record import RecordEpisode
 from mani_skill.trajectory.merge_trajectory import merge_trajectories
 from mani_skill.examples.motionplanning.panda.solutions import (
-    solvePushBlock,
     solvePushCube,
-    solvePushCubeHard,
-    solvePushTwoCubes,
-    solvePushTwoCubesMultimodal,
     solvePickCube,
     solveStackCube,
     solveStackCubeSwapped,
@@ -28,7 +24,6 @@ from mani_skill.examples.motionplanning.panda.solutions import (
     solvePlaceSphere,
     solveStackPyramid,
     solvePlaceCube,
-    solveStackCubeClutterRandomPick,
 )
 
 MP_SOLUTIONS = {
@@ -39,7 +34,6 @@ MP_SOLUTIONS = {
     "PlugCharger-v1": solvePlugCharger,
     "PlaceSphere-v1": solvePlaceSphere,
     "PushCube-v1": solvePushCube,
-    "PushCubeHard-v1": solvePushCubeHard,
     "PullCubeTool-v1": solvePullCubeTool,
     "LiftPegUpright-v1": solveLiftPegUpright,
     "PullCube-v1": solvePullCube,
@@ -50,33 +44,10 @@ MP_SOLUTIONS = {
     "StackCubeSwapped-v1": solveStackCubeSwapped,
     "StackCubeSwappedLockedRotation-v1": solveStackCubeSwapped,
     "StackCubeLockedRotation-v1": solveStackCube,
-    "StackCubeRestrictedSpawn-v1": solveStackCube,
-    "PlaceSphereRestrictedSpawn-v1": solvePlaceSphere,
     "PlaceCubeLeft-v1": solvePlaceCube,
     "PlaceCubeRight-v1": solvePlaceCube,
     "PlaceCubeLeftLockedRotation-v1": solvePlaceCube,
     "PlaceCubeRightLockedRotation-v1": solvePlaceCube,
-    "PushBlock-v1": solvePushBlock,
-    # PushTwoCubes-v1 is single-mode by design: the solver always pushes cubeA then cubeB,
-    # and never uses the order-randomising helpers PushBlock relies on
-    "PushTwoCubes-v1": solvePushTwoCubes,
-    # PushTwoCubesMultimodal-v1 supports 4 modalities (straight vs criss-cross matching, start A vs B)
-    "PushTwoCubesMultimodal-v1": solvePushTwoCubesMultimodal,
-    # StackCubeClutter-v1 still stacks cubeA on cubeB, just with extra distractors on the
-    # table, so it reuses solveStackCube unchanged
-    "StackCubeClutter-v1": solveStackCube,
-    # rotation-lock never affects grasp planning (grasp pose is always derived from the
-    # cube's live OBB), so this spawn-only variant reuses the same solver too
-    "StackCubeClutterLockedRotation-v1": solveStackCube,
-    # get_actor_obb tessellates box/cylinder/sphere collision shapes generically (see
-    # mani_skill/utils/geometry/trimesh_utils.py), so the same OBB grasp approach works for
-    # any pool member -- solveStackCubeClutterRandomPick just reads which two via
-    # env.pick_idx/env.target_idx instead of hardcoding cubeA/cubeB, see CUSTOM_ENVS.md.
-    "StackCubeClutterRandomPick-v1": solveStackCubeClutterRandomPick,
-    "StackCubeClutterRandomPickLockedRotation-v1": solveStackCubeClutterRandomPick,
-    # same-size is a spawn/geometry-only change too (see stack_cube_clutter_same_size.py),
-    # so it reuses the same generic pool-based solver unchanged
-    "StackCubeClutterRandomPickSameSizeLockedRotation-v1": solveStackCubeClutterRandomPick,
 }
 
 

@@ -20,7 +20,7 @@ from mani_skill.utils.structs import Pose
 from mani_skill.utils.structs.types import Array, GPUMemoryConfig, SimConfig
 
 
-@register_env("PlaceSphere-v1", max_episode_steps=250)
+@register_env("PlaceSphere-v1", max_episode_steps=50)
 class PlaceSphereEnv(BaseEnv):
     """
     **Task Description:**
@@ -235,9 +235,9 @@ class PlaceSphereEnv(BaseEnv):
         ungrasp_reward = (
             torch.sum(self.agent.robot.get_qpos()[:, -2:], axis=1) / gripper_width
         )
-        ungrasp_reward[~is_obj_grasped] = (
-            16.0  # give ungrasp a bigger reward, so that it exceeds the robot static reward and the gripper can close
-        )
+        ungrasp_reward[
+            ~is_obj_grasped
+        ] = 16.0  # give ungrasp a bigger reward, so that it exceeds the robot static reward and the gripper can close
         v = torch.linalg.norm(self.obj.linear_velocity, axis=1)
         av = torch.linalg.norm(self.obj.angular_velocity, axis=1)
         static_reward = 1 - torch.tanh(v * 10 + av)

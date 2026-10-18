@@ -4,11 +4,7 @@ from .stack_cube_swapped import solve as solveStackCubeSwapped
 from .peg_insertion_side import solve as solvePegInsertionSide
 from .place_sphere import solve as solvePlaceSphere
 from .plug_charger import solve as solvePlugCharger
-from .push_block import solve as solvePushBlock
 from .push_cube import solve as solvePushCube
-from .push_cube_hard import solve as solvePushCubeHard
-from .push_two_cubes import solve as solvePushTwoCubes
-from .push_two_cubes_multimodal import solve as solvePushTwoCubesMultimodal
 from .pull_cube_tool import solve as solvePullCubeTool
 from .lift_peg_upright import solve as solveLiftPegUpright
 from .pull_cube import solve as solvePullCube
@@ -16,6 +12,3 @@ from .draw_svg import solve as solveDrawSVG
 from .draw_triangle import solve as solveDrawTriangle
 from .stack_pyramid import solve as solveStackPyramid
 from .place_cube import solve as solvePlaceCube
-from .stack_cube_clutter_random_pick import (
-    solve as solveStackCubeClutterRandomPick,
-)
